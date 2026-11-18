@@ -1,6 +1,6 @@
 import type { SampledPath } from './path';
 import { sampleAt } from './path';
-import type { Constraints } from './routine';
+import { DEFAULT_LAT_ACCEL, type Constraints } from './routine';
 
 export interface TrajState {
   t: number; // seconds from the start of this trajectory
@@ -23,7 +23,7 @@ export interface SpeedZone {
 
 /**
  * Time-parameterize the path between arc lengths s0 and s1, starting and ending at rest.
- * Speed is capped by maxVel, by lateral acceleration on curves, and by how fast the robot
+ * Speed is capped by maxVel, by sideways acceleration on curves (maxLatAccel), and by how fast the robot
  * can rotate to follow the heading plan, and by any speed zones; then forward/backward passes apply maxAccel.
  */
 export function profileRange(path: SampledPath, s0: number, s1: number, c: Constraints, zones: SpeedZone[] = []): TrajState[] {
@@ -39,6 +39,7 @@ export function profileRange(path: SampledPath, s0: number, s1: number, c: Const
   const maxV = Math.max(0.05, c.maxVel);
   const maxA = Math.max(0.1, c.maxAccel);
   const maxW = Math.max(0.1, c.maxAngVel);
+  const maxLat = Math.max(0.5, c.maxLatAccel ?? DEFAULT_LAT_ACCEL);
 
   const cap = new Array<number>(n);
   for (let i = 0; i < n; i++) {
@@ -48,7 +49,7 @@ export function profileRange(path: SampledPath, s0: number, s1: number, c: Const
     const dHds = ds > 1e-9 ? Math.abs((b.heading - a.heading) / ds) : 0;
     const k = Math.abs(pts[i].curvature);
     let v = maxV;
-    if (k > 1e-6) v = Math.min(v, Math.sqrt(maxA / k));
+    if (k > 1e-6) v = Math.min(v, Math.sqrt(maxLat / k));
     if (dHds > 1e-6) v = Math.min(v, maxW / dHds);
     for (const z of zones) if (pts[i].s >= z.s0 - 1e-9 && pts[i].s <= z.s1 + 1e-9) v = Math.min(v, Math.max(0.05, z.v));
     cap[i] = v;

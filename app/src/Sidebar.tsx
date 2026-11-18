@@ -1,4 +1,4 @@
-import { ACTIONS, ACTION_TYPES, BUTTONS, BUTTON_IDS, DEFAULT_SHOOT_SPEED_PCT, type ActionType, type ButtonId } from '../../shared/routine';
+import { ACTIONS, ACTION_TYPES, BUTTONS, BUTTON_IDS, DEFAULT_LAT_ACCEL, DEFAULT_SHOOT_SPEED_PCT, type ActionType, type ButtonId } from '../../shared/routine';
 import { posToS } from '../../shared/path';
 import { useStore, type Tool } from './store';
 import { fmtDeg, useRoutine, useSchedule } from './useSchedule';
@@ -224,7 +224,7 @@ export function ConstraintsPanel() {
   return (
     <section className="panel">
       <h3>Speed limits</h3>
-      <div className="grid3">
+      <div className="grid2">
         <label>
           Max speed (m/s)
           <input type="number" step="0.1" min="0.2" value={c.maxVel} onChange={(e) => s.setConstraints({ maxVel: Math.max(0.2, num(e.target.value, c.maxVel)) })} />
@@ -243,8 +243,20 @@ export function ConstraintsPanel() {
             onChange={(e) => s.setConstraints({ maxAngVel: (Math.max(10, num(e.target.value, 180)) * Math.PI) / 180 })}
           />
         </label>
+        <label title="How hard the robot may corner. Higher keeps more speed through waypoints and curves; lower slows down more for turns.">
+          Corner accel (m/s²)
+          <input
+            type="number"
+            step="1"
+            min="1"
+            value={c.maxLatAccel ?? DEFAULT_LAT_ACCEL}
+            onChange={(e) => s.setConstraints({ maxLatAccel: Math.max(1, num(e.target.value, DEFAULT_LAT_ACCEL)) })}
+          />
+        </label>
       </div>
       <p className="hint">
+        Corner accel controls how much the robot slows at waypoints and curves: raise it to keep speed, lower it if the robot drifts wide on turns.
+        <br />
         Path length {sched.path.length.toFixed(2)} m · driving {sched.driveEnd.toFixed(2)} s · total {sched.total.toFixed(2)} s
       </p>
     </section>

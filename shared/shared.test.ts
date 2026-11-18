@@ -90,6 +90,27 @@ describe('trajectory', () => {
   });
 });
 
+describe('waypoints', () => {
+  it('keeps speed through a gentle waypoint but still slows for a hairpin', () => {
+    const mk = (pts: [number, number][]) => ({ ...straight(), waypoints: applyAutoHandles(pts.map(([x, y], i) => makeWaypoint(x, y, i === 0 ? 0 : null))), constraints: { ...C, maxVel: 3.5, maxAccel: 4 } });
+    const gentle = buildSchedule(mk([[2, 2], [6, 3], [10, 2]]));
+    const g = gentle.steps[0];
+    if (g.kind !== 'drive') throw new Error('expected drive');
+    const wpS = gentle.path.waypointS[1];
+    const atWp = g.traj.reduce((best, p) => (Math.abs(p.s - wpS) < Math.abs(best.s - wpS) ? p : best));
+    expect(atWp.v).toBeGreaterThan(3.5 * 0.9);
+
+    const hairpin = buildSchedule(mk([[2, 2], [6, 2], [2, 2.6]]));
+    const h = hairpin.steps[0];
+    if (h.kind !== 'drive') throw new Error('expected drive');
+    // slowest point in the middle of the turn (ignoring the start/end where it is at rest)
+    const L = hairpin.path.length;
+    const mid = h.traj.filter((p) => p.s > 1.5 && p.s < L - 1.5);
+    const slowest = Math.min(...mid.map((p) => p.v));
+    expect(slowest).toBeLessThan(3.5 * 0.75);
+  });
+});
+
 describe('schedule', () => {
   it('stops for stop-actions and orders everything in time', () => {
     const r = straight(4);

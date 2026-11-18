@@ -81,7 +81,12 @@ export interface Constraints {
   maxVel: number; // m/s
   maxAccel: number; // m/s^2
   maxAngVel: number; // rad/s
+  /** sideways (centripetal) acceleration allowed in curves, m/s^2. Higher = keeps more speed through waypoints. */
+  maxLatAccel?: number;
 }
+
+/** Swerve robots in FRS hold a lot of speed through curves; only tight turns need slowing. */
+export const DEFAULT_LAT_ACCEL = 15;
 
 export interface Routine {
   version: 1;
@@ -104,7 +109,7 @@ export function moveSpeedFraction(a: Action): number | null {
   return Math.min(100, Math.max(5, pct)) / 100;
 }
 
-export const DEFAULT_CONSTRAINTS: Constraints = { maxVel: 3.5, maxAccel: 4, maxAngVel: 4 };
+export const DEFAULT_CONSTRAINTS: Constraints = { maxVel: 3.5, maxAccel: 4, maxAngVel: 4, maxLatAccel: DEFAULT_LAT_ACCEL };
 
 export function uid(prefix = ''): string {
   return prefix + Math.random().toString(36).slice(2, 10);
