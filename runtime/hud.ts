@@ -59,6 +59,8 @@ export function mountHud(runner: Runner) {
         <div class="row" style="margin-top:6px"><button class="b" data-paste>Load</button></div>
       </details>
       <details><summary>Setup &amp; calibration</summary>
+        <div class="row" style="margin-top:6px"><button class="b go" data-calibrate>Calibrate (needs ~4 m clear ahead)</button></div>
+        <div class="muted" style="margin-top:4px">Drive into open space first, like the middle of the neutral zone.</div>
         <div class="grid">
           <span>Top speed (m/s)</span><input data-cal="maxVel" type="number" step="0.1">
           <span>Turn rate (rad/s)</span><input data-cal="maxOmega" type="number" step="0.1">
@@ -69,7 +71,6 @@ export function mountHud(runner: Runner) {
           <span>Re-arm after each auto</span><input data-rearm type="checkbox">
           ${BUTTON_IDS.map((b) => `<span>${BUTTONS[b].label} (pad #)</span><input data-btn="${b}" type="number" min="0" max="16">`).join('')}
         </div>
-        <div class="row" style="margin-top:8px"><button class="b" data-calibrate>Calibrate (needs ~4 m clear ahead)</button></div>
         <div class="muted" style="margin-top:6px">Esc, any key, or a real controller hands control back to you instantly.</div>
       </details>
     </div>
