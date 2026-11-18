@@ -7,7 +7,11 @@ Draw autonomous routines for **FRS 2026 Rebuilt** (rebuilt.frsim.com) and have t
 
 Runs in **Singleplayer** and regular **Multiplayer** rooms (allowed by the FRS devs). It is disabled in **Ranked**, events/tournaments, and while spectating. The panel shows which mode it detected and which robot is yours; if it can't tell, it stays off.
 
-## Run the planner
+## Open the planner
+
+**Online:** https://maxthecobbler.github.io/frs-auto-planner/ (updates automatically on every push to `main`).
+
+**Locally:**
 
 ```bash
 npm install
