@@ -4,7 +4,7 @@ import { samplePath } from '../shared/path';
 import { allianceOfX } from '../shared/field';
 import type { Runner } from './runner';
 import { store } from './storage';
-import { readPhase } from './game';
+import { readMode, readPhase, robotInfo } from './game';
 
 const CSS = `
 :host { all: initial; }
@@ -47,6 +47,7 @@ export function mountHud(runner: Runner) {
       <button class="ic" data-min title="Minimize">–</button><button class="ic" data-close title="Close">×</button></div>
     <div class="bd">
       <div class="st" data-status></div>
+      <div class="muted" data-mode></div>
       <div class="row"><select data-routines></select><button class="ic" data-del title="Delete routine">🗑</button></div>
       <canvas data-map width="560" height="280"></canvas>
       <div class="row">
@@ -81,6 +82,7 @@ export function mountHud(runner: Runner) {
   const box = $<HTMLDivElement>('.box');
   const status = $<HTMLDivElement>('[data-status]');
   const phaseEl = $<HTMLSpanElement>('[data-phase]');
+  const modeEl = $<HTMLDivElement>('[data-mode]');
   const sel = $<HTMLSelectElement>('[data-routines]');
   const map = $<HTMLCanvasElement>('[data-map]');
   const ctx = map.getContext('2d')!;
@@ -200,6 +202,15 @@ export function mountHud(runner: Runner) {
     status.className = 'st ' + t.state;
     const ph = readPhase();
     phaseEl.textContent = ph ? '· ' + ph : '';
+    if (ph) {
+      const mode = readMode();
+      const info = robotInfo();
+      const label = { singleplayer: 'Singleplayer', multiplayer: 'Multiplayer', ranked: 'Ranked', spectating: 'Spectating', event: 'Event', unknown: 'Unknown mode' }[mode.kind];
+      modeEl.textContent = mode.allowed
+        ? `${label}${mode.alliance ? ' · ' + mode.alliance : ''} · ${info.name ? 'your robot: ' + info.name.replace('robot:', '') : 'looking for your robot…'}`
+        : `${label}: ${mode.reason}`;
+      modeEl.style.color = mode.allowed ? '' : '#fca5a5';
+    } else modeEl.textContent = '';
 
     drawField(ctx, view);
     let path = t.state === 'running' && t.schedule ? t.schedule.path : null;

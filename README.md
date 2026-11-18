@@ -5,7 +5,7 @@ Draw autonomous routines for **FRS 2026 Rebuilt** (rebuilt.frsim.com) and have t
 - **Planner app** (`app/`): draw a path on the field, set robot headings, and drop action items on the path: intake on/off, intake for N s, shoot, climb, any button, and wait. A timeline shows when everything happens and warns if the routine runs past the 20 s auto period.
 - **In-game runtime** (`runtime/`): loaded into the FRS tab by a bookmarklet. It reads the robot's position from the game and follows the path closed-loop. It drives through a virtual gamepad (the same input a real controller gives) and presses the mechanism buttons at the right moments.
 
-Singleplayer only: the runtime refuses to run when more than one robot is on the field.
+Runs in **Singleplayer** and regular **Multiplayer** rooms (allowed by the FRS devs). It is disabled in **Ranked**, events/tournaments, and while spectating. The panel shows which mode it detected and which robot is yours; if it can't tell, it stays off.
 
 ## Run the planner
 
@@ -17,9 +17,9 @@ npm run dev        # builds the runtime, then serves the app at http://localhost
 ## Use it in FRS
 
 1. In the app, click **Send to FRS** and drag the **⚡ FRS Auto** button to your bookmarks bar.
-2. Open rebuilt.frsim.com, start a **Singleplayer** match, and click the bookmark. The FRS AUTO panel appears.
+2. Open rebuilt.frsim.com, start a **Singleplayer** match or join a **Multiplayer** room, and click the bookmark. The FRS AUTO panel appears.
 3. The first time only: open **Setup & calibration**, drive to open space (for example the neutral zone), and click **Calibrate**.
-4. Pick your routine, click **Arm for Auto**, then press **R** to restart the match. The routine runs when Auto starts, and the panel re-arms itself for the next restart.
+4. Pick your routine and click **Arm for Auto** before the match starts. The routine runs when Auto begins and the panel re-arms itself for the next match. In Singleplayer you can press **R** to restart and run it again.
 
 To update a routine without re-dragging the bookmark, click **Copy routine** in the app. Then in the game panel, choose **Load routine**, paste, and click **Load**.
 

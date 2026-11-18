@@ -8,6 +8,7 @@ type Any = any;
 export type FrontAxis = '-x' | '+x' | '-z' | '+z';
 
 let three: Any = null;
+let modules: Map<unknown, Any> | null = null;
 /** Shared with any earlier copy of the runtime that already hooked the renderer. */
 interface HookState {
   scene: Any;
@@ -47,6 +48,7 @@ export async function attach(): Promise<void> {
   const ctx = await getTurbopackContext();
   const cache: Map<unknown, Any> | undefined = ctx && ctx.c;
   if (!cache || typeof cache.values !== 'function') throw new Error('Game module cache not found (FRS may have updated).');
+  modules = cache;
   for (const m of cache.values()) {
     try {
       const e = m && m.exports;
@@ -97,7 +99,143 @@ function scanRobots() {
     });
   }
   robotCount = found.length;
-  robot = found[0] ?? null;
+  robot = pickMine(found);
+}
+
+/**
+ * Which of the robots on the field is ours. Offline there is only one (or the one with our
+ * team number). Online we ask the game's network view for our robot (by localId) and take
+ * the rendered robot closest to it.
+ */
+function pickMine(found: Any[]): Any {
+  if (found.length === 0) return null;
+  const net = netState();
+  if (!net || net.status === 'off') {
+    if (found.length === 1) return found[0];
+    const team = gameState()?.team;
+    return found.find((o) => o.name === `robot:${team}`) ?? null;
+  }
+  const me = localNetRobot();
+  if (!me || !Array.isArray(me.pos)) return null;
+  let best: Any = null;
+  let bestD = Infinity;
+  for (const o of found) {
+    o.updateWorldMatrix(true, false);
+    const m = o.matrixWorld.elements as number[];
+    let d = (m[12] - me.pos[0]) ** 2 + (m[14] - me.pos[2]) ** 2;
+    if (me.team !== undefined && o.name !== `robot:${me.team}`) d += 4; // prefer our team's model
+    if (d < bestD) {
+      bestD = d;
+      best = o;
+    }
+  }
+  return bestD < 1.5 * 1.5 + 4 ? best : null;
+}
+
+// ---------- game state stores (found by shape, since module ids change between builds) ----------
+
+let storesScanAt = 0;
+let netStore: Any = null; // { status, ranked, room, spectating, you, ... }
+let gameStore: Any = null; // { screen, alliance, team, startMatch, ... }
+let netView: Any = null; // { view: { robots }, localId, predicted, ... }
+
+function findStores() {
+  if (!modules || performance.now() - storesScanAt < 2000) return;
+  if (netStore && gameStore && netView) return;
+  storesScanAt = performance.now();
+  for (const m of modules.values()) {
+    let e: Any;
+    try {
+      e = m && m.exports;
+    } catch {
+      continue;
+    }
+    if (!e || typeof e !== 'object') continue;
+    for (const k of Object.keys(e)) {
+      let v: Any;
+      try {
+        v = e[k];
+      } catch {
+        continue;
+      }
+      if (!v) continue;
+      if (typeof v === 'function' && typeof v.getState === 'function') {
+        let st: Any;
+        try {
+          st = v.getState();
+        } catch {
+          continue;
+        }
+        if (!st || typeof st !== 'object') continue;
+        if (!netStore && 'ranked' in st && 'status' in st && 'room' in st && 'spectating' in st) netStore = v;
+        if (!gameStore && 'screen' in st && 'alliance' in st && 'team' in st && typeof st.startMatch === 'function') gameStore = v;
+      } else if (!netView && typeof v === 'object' && 'localId' in v && 'view' in v && 'predicted' in v) {
+        netView = v;
+      }
+    }
+  }
+}
+
+function netState(): Any {
+  findStores();
+  try {
+    return netStore ? netStore.getState() : null;
+  } catch {
+    return null;
+  }
+}
+
+function gameState(): Any {
+  findStores();
+  try {
+    return gameStore ? gameStore.getState() : null;
+  } catch {
+    return null;
+  }
+}
+
+function localNetRobot(): Any {
+  findStores();
+  const v = netView?.view;
+  if (!v || !Array.isArray(v.robots)) return null;
+  return v.robots.find((r: Any) => r.id === netView.localId) ?? null;
+}
+
+export interface ModeInfo {
+  kind: 'singleplayer' | 'multiplayer' | 'ranked' | 'spectating' | 'event' | 'unknown';
+  allowed: boolean;
+  reason: string;
+  /** our alliance according to the game, if it says */
+  alliance: 'blue' | 'red' | null;
+}
+
+/**
+ * What kind of match this is. FRS Auto runs in Singleplayer and regular (non-ranked)
+ * Multiplayer only, and fails closed on anything it can't positively identify.
+ */
+export function readMode(): ModeInfo {
+  const net = netState();
+  const game = gameState();
+  const al = game?.alliance === 'blue' || game?.alliance === 'red' ? game.alliance : null;
+  if (!net) {
+    // older build or stores not found: only trust a field with exactly one robot
+    robotInfo();
+    return robotCount === 1
+      ? { kind: 'singleplayer', allowed: true, reason: '', alliance: al }
+      : { kind: 'unknown', allowed: false, reason: "Couldn't tell what kind of match this is, so FRS Auto is off." , alliance: al };
+  }
+  if (net.ranked || game?.queuePlay) return { kind: 'ranked', allowed: false, reason: 'Disabled in Ranked.', alliance: al };
+  if (net.spectating) return { kind: 'spectating', allowed: false, reason: "You're spectating.", alliance: al };
+  if (net.status === 'off') return { kind: 'singleplayer', allowed: true, reason: '', alliance: al };
+  if (net.status === 'room') {
+    const room = net.room;
+    if (!room || room.event || room.ranked || room.kind === 'event') return { kind: 'event', allowed: false, reason: 'Disabled in events and tournaments.', alliance: al };
+    const mine = Array.isArray(room.players) ? room.players.find((p: Any) => p.id === net.you) : null;
+    if (mine && mine.alliance === null) return { kind: 'spectating', allowed: false, reason: "You're watching, not driving.", alliance: al };
+    const roomAl = mine?.alliance === 'blue' || mine?.alliance === 'red' ? mine.alliance : al;
+    return { kind: 'multiplayer', allowed: true, reason: '', alliance: roomAl };
+  }
+  return { kind: 'unknown', allowed: false, reason: `Unsupported mode ("${String(net.status)}").`, alliance: al };
 }
 
 function attachedToScene(o: Any): boolean {
@@ -114,6 +252,7 @@ export function inMatch(): boolean {
 }
 
 export function robotInfo(): { count: number; name: string | null } {
+  // re-checked periodically: in multiplayer, which robot is ours comes from the network view
   if (!robot || !attachedToScene(robot) || performance.now() - robotScanAt > 2000) scanRobots();
   return { count: robotCount, name: robot ? robot.name : null };
 }
@@ -121,7 +260,7 @@ export function robotInfo(): { count: number; name: string | null } {
 /** Robot pose in WPILib blue-origin field coordinates, or null if unavailable. */
 export function readPose(front: FrontAxis = '-x'): Pose | null {
   if (!inMatch()) return null;
-  if (!robot || !attachedToScene(robot)) scanRobots();
+  if (!robot || !attachedToScene(robot) || performance.now() - robotScanAt > 2000) scanRobots();
   if (!robot) return null;
   robot.updateWorldMatrix(true, false);
   const m = robot.matrixWorld.elements as number[];

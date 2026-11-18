@@ -2,7 +2,7 @@ import { FIELD, allianceOfX, wrapAngle, type Pose } from '../shared/field';
 import { mirrorRoutine, type Routine } from '../shared/routine';
 import { buildSchedule, buttonsAt, referenceAt, type Schedule } from '../shared/schedule';
 import { stickFromVelocity } from '../shared/stick';
-import { isAutoPhase, readClock, readPhase, readPose, robotInfo } from './game';
+import { isAutoPhase, readClock, readMode, readPhase, readPose, robotInfo } from './game';
 import { isActive, realInputActive, setActive, setButtons, setSticks } from './pad';
 import { store } from './storage';
 
@@ -57,9 +57,12 @@ export class Runner {
 
   /** Refuse anything that is not a one-robot (singleplayer) match. */
   private guard(): string | null {
-    const info = robotInfo();
-    if (!readPose(store.settings().front)) return 'Start a Singleplayer match first.';
-    if (info.count > 1) return 'Disabled: more than one robot on the field. FRS Auto only runs in Singleplayer.';
+    const mode = readMode();
+    if (!mode.allowed) return mode.reason;
+    robotInfo();
+    if (!readPose(store.settings().front)) {
+      return mode.kind === 'multiplayer' ? "Couldn't find your robot yet. Try again once the match is on screen." : 'Start a Singleplayer or Multiplayer match first.';
+    }
     return null;
   }
 
@@ -102,7 +105,7 @@ export class Runner {
       return null;
     }
     const pose = readPose(store.settings().front)!;
-    const alliance = allianceOfX(pose.x);
+    const alliance = readMode().alliance ?? allianceOfX(pose.x);
     const drawnFor = routine.waypoints.length ? allianceOfX(routine.waypoints[0].x) : 'blue';
     const r: Routine = drawnFor === alliance ? routine : mirrorRoutine(routine);
     const schedule = buildSchedule(r);
@@ -183,6 +186,8 @@ export class Runner {
       return this.set('idle', 'Auto finished.');
     }
     if (realInputActive()) return this.stop('Stopped: a real controller was used.');
+    const mode = readMode();
+    if (!mode.allowed) return this.stop(mode.reason);
     const pose = readPose(settings.front);
     if (!pose) return this.stop('Lost the robot (match ended?).');
     const sched = this.t.schedule!;

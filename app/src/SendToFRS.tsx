@@ -66,10 +66,10 @@ export function SendToFRS({ onClose }: { onClose: () => void }) {
             <span className="hint">The bookmark carries the autos inside it. Re-drag it after big changes, or use "Copy routine" below.</span>
           </li>
           <li>
-            Open <a href="https://rebuilt.frsim.com" target="_blank" rel="noreferrer">rebuilt.frsim.com</a>, start a <b>Singleplayer</b> match, and click the bookmark. The FRS AUTO panel appears.
+            Open <a href="https://rebuilt.frsim.com" target="_blank" rel="noreferrer">rebuilt.frsim.com</a>, start a <b>Singleplayer</b> match or join a <b>Multiplayer</b> room, and click the bookmark. The FRS AUTO panel appears.
           </li>
           <li>
-            Choose your auto, click <b>Arm for Auto</b>, then press <kbd>R</kbd> to restart the match. It drives the routine when Auto begins and re-arms for every restart.
+            Choose your auto and click <b>Arm for Auto</b> before the match starts. It drives the routine when Auto begins and re-arms for the next match. (In Singleplayer, press <kbd>R</kbd> to restart and run it again.)
           </li>
           <li>
             The first time, open <b>Setup &amp; calibration</b> → <b>Calibrate</b> with the robot in open space (for example the neutral zone).
@@ -87,8 +87,8 @@ export function SendToFRS({ onClose }: { onClose: () => void }) {
         </div>
         {msg && <p className="flash">{msg}</p>}
         <p className="hint">
-          FRS Auto only runs in Singleplayer. It refuses to drive when there's more than one robot on the field. Pressing any key or touching a real controller gives
-          control straight back to you.
+          FRS Auto runs in Singleplayer and regular Multiplayer. It's disabled in Ranked, events, and while spectating. Pressing any key or touching a real
+          controller gives control straight back to you.
         </p>
       </div>
     </div>

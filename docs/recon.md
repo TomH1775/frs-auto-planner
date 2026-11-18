@@ -47,6 +47,15 @@ Findings that the runtime (`runtime/`) depends on. If FRS updates and auto break
 The phase label is a leaf `<span>` in the scoreboard. Its text goes:
 `Ready` → `Starting` (3-2-1, "GO") → **`Auto`** (20 s) → `Auto scoring` → `Transition · 0:10` → `Shift N · m:ss` → `End game`.
 - Auto start = the label becomes exactly `Auto`. Auto end = anything else.
-- Singleplayer has exactly one `robot:<n>` in the scene. The runtime refuses to run when it sees more than one.
+- Singleplayer has exactly one `robot:<n>` in the scene. Mode detection (singleplayer / multiplayer / ranked) is described below.
 - Blue default start: about (4.44, 7.57) facing −y. Red start is the blue start rotated 180° about the field center.
   The field is rotationally symmetric, so `mirror(x, y, θ) = (16.54 − x, 8.022 − y, θ + π)`.
+
+## Multiplayer (added 2026-11-18)
+- Robots are named `robot:<team number>` in every mode, so two players with the same robot share a name.
+- **Net store**: a zustand store whose state has `status` ("off" offline, "room" in a multiplayer room),
+  `ranked`, `spectating`, `room` (`players[{id, alliance}]`, `code`, `open`, `friends`), `you`.
+- **Game store**: state has `screen`, `alliance`, `team`, `queuePlay`, `startMatch()`, ...
+- **Network view**: an exported object with `view.robots[{id, team, alliance, pos[3], quat[4]}]`, `localId`, `predicted`.
+  Our robot = `view.robots.find(r => r.id === localId)`; the runtime picks the rendered `robot:N` nearest to its `pos`.
+- All three are found by shape, not module id. Ranked, events and spectating are refused; unknown states fail closed.
