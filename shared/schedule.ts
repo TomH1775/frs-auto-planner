@@ -1,0 +1,179 @@
+import type { Pose } from './field';
+import { posToS, samplePath, sampleAt, type SampledPath } from './path';
+import { ACTIONS, AUTO_LENGTH, buttonForAction, moveSpeedFraction, type Action, type ButtonId, type Routine } from './routine';
+import { duration, profileRange, stateAt, timeAtS, type SpeedZone, type TrajState } from './trajectory';
+
+export type Step =
+  | { kind: 'drive'; t0: number; t1: number; traj: TrajState[] }
+  | { kind: 'hold'; t0: number; t1: number; pose: Pose; actionIds: string[] };
+
+/** A button held down from t0 to t1 (t1 may be Infinity = until auto ends). */
+export interface ButtonSpan {
+  button: ButtonId;
+  t0: number;
+  t1: number;
+  actionId: string;
+}
+
+export interface ActionTiming {
+  t0: number;
+  t1: number;
+  s: number;
+}
+
+export interface Schedule {
+  path: SampledPath;
+  steps: Step[];
+  spans: ButtonSpan[];
+  timing: Record<string, ActionTiming>;
+  /** stretches of path driven slowly (shooting on the move) */
+  zones: (SpeedZone & { actionId: string })[];
+  /** when the last drive/hold step ends */
+  driveEnd: number;
+  /** when everything (including button spans) is done */
+  total: number;
+  warnings: string[];
+}
+
+const SAME_SPOT = 0.01; // m: stop actions this close together run back-to-back at one spot
+
+export function buildSchedule(r: Routine): Schedule {
+  const path = samplePath(r.waypoints);
+  const warnings: string[] = [];
+  const steps: Step[] = [];
+  const timing: Record<string, ActionTiming> = {};
+  if (path.samples.length === 0) return { path, steps, spans: [], timing, zones: [], driveEnd: 0, total: 0, warnings: ['Add a starting waypoint.'] };
+
+  const withS = r.actions
+    .map((a, order) => ({ a, order, s: posToS(path, a.at) }))
+    .sort((p, q) => p.s - q.s || p.order - q.order);
+
+  // shooting on the move: hold a reduced speed from the action's spot for long enough
+  // to cover its duration at that speed (the robot slows down before reaching the spot)
+  const zones: (SpeedZone & { actionId: string })[] = [];
+  for (const it of withS) {
+    const f = moveSpeedFraction(it.a);
+    if (f === null || f >= 1) continue;
+    const v = Math.max(0.05, f * r.constraints.maxVel);
+    const s1 = Math.min(path.length, it.s + v * Math.max(0.1, it.a.duration));
+    if (s1 - it.s > 0.02) zones.push({ s0: it.s, s1, v, actionId: it.a.id }); // nothing to slow at the very end of the path
+  }
+
+  // stop points split the path into legs that each start and end at rest
+  const stopSpots: { s: number; actions: Action[] }[] = [];
+  for (const it of withS) {
+    if (!it.a.stop) continue;
+    const last = stopSpots[stopSpots.length - 1];
+    if (last && Math.abs(last.s - it.s) < SAME_SPOT) last.actions.push(it.a);
+    else stopSpots.push({ s: it.s, actions: [it.a] });
+  }
+
+  let t = 0;
+  let s = 0;
+  const legs: { traj: TrajState[]; t0: number }[] = [];
+  const driveLeg = (sEnd: number) => {
+    if (sEnd - s < 1e-4) return;
+    const traj = profileRange(path, s, sEnd, r.constraints, zones);
+    const d = duration(traj);
+    steps.push({ kind: 'drive', t0: t, t1: t + d, traj });
+    legs.push({ traj, t0: t });
+    t += d;
+    s = sEnd;
+  };
+
+  for (const spot of stopSpots) {
+    driveLeg(spot.s);
+    const p = sampleAt(path, spot.s);
+    const t0 = t;
+    for (const a of spot.actions) {
+      const d = Math.max(0, a.duration);
+      timing[a.id] = { t0: t, t1: t + d, s: spot.s };
+      t += d;
+    }
+    // even a zero-length stop needs a brief settle so the robot actually stops
+    if (t - t0 < 0.05) t = t0 + 0.05;
+    steps.push({ kind: 'hold', t0, t1: t, pose: { x: p.x, y: p.y, heading: p.heading }, actionIds: spot.actions.map((a) => a.id) });
+  }
+  driveLeg(path.length);
+  const driveEnd = t;
+
+  // actions done while driving: find when the robot passes their spot
+  for (const it of withS) {
+    if (it.a.stop) continue;
+    let at = driveEnd;
+    for (const leg of legs) {
+      const first = leg.traj[0].s;
+      const last = leg.traj[leg.traj.length - 1].s;
+      if (it.s >= first - 1e-6 && it.s <= last + 1e-6) {
+        at = leg.t0 + timeAtS(leg.traj, it.s);
+        break;
+      }
+    }
+    // an action sitting exactly on a stop spot (but not stopping) fires on arrival
+    timing[it.a.id] = { t0: at, t1: at + Math.max(0, it.a.duration), s: it.s };
+  }
+
+  // turn actions into button holds
+  const spans: ButtonSpan[] = [];
+  const ordered = [...withS].sort((p, q) => timing[p.a.id].t0 - timing[q.a.id].t0 || p.order - q.order);
+  let intakeOn: { t0: number; id: string } | null = null;
+  for (const { a } of ordered) {
+    const tm = timing[a.id];
+    if (a.type === 'intakeOn') {
+      if (!intakeOn) intakeOn = { t0: tm.t0, id: a.id };
+      tm.t1 = Infinity;
+      continue;
+    }
+    if (a.type === 'intakeOff') {
+      if (intakeOn) {
+        spans.push({ button: 'intake', t0: intakeOn.t0, t1: tm.t0, actionId: intakeOn.id });
+        timing[intakeOn.id].t1 = tm.t0;
+        intakeOn = null;
+      } else warnings.push('"Intake off" with no "Intake on" before it.');
+      continue;
+    }
+    const b = buttonForAction(a);
+    if (b && ACTIONS[a.type].hasDuration) spans.push({ button: b, t0: tm.t0, t1: tm.t0 + Math.max(0.1, a.duration), actionId: a.id });
+  }
+  if (intakeOn) spans.push({ button: 'intake', t0: intakeOn.t0, t1: Infinity, actionId: intakeOn.id });
+
+  const finite = spans.map((x) => x.t1).filter(Number.isFinite);
+  const total = Math.max(driveEnd, ...finite, 0);
+  if (total > AUTO_LENGTH) warnings.push(`Routine takes ${total.toFixed(1)} s but auto is only ${AUTO_LENGTH} s.`);
+  for (const a of r.actions) {
+    if (a.type === 'wait' && !a.stop) warnings.push('A "Wait" that does not stop the robot does nothing.');
+  }
+  return { path, steps, spans, timing, zones, driveEnd, total, warnings };
+}
+
+/** Reference pose at schedule time t (for previews and the follower). */
+export function referenceAt(sched: Schedule, t: number): { pose: Pose; vx: number; vy: number; omega: number; step: Step | null } {
+  const steps = sched.steps;
+  if (steps.length === 0) {
+    const p = sched.path.samples[0];
+    return { pose: { x: p?.x ?? 0, y: p?.y ?? 0, heading: p?.heading ?? 0 }, vx: 0, vy: 0, omega: 0, step: null };
+  }
+  let step = steps[steps.length - 1];
+  for (const st of steps) {
+    if (t < st.t1) {
+      step = st;
+      break;
+    }
+  }
+  if (step.kind === 'hold') return { pose: step.pose, vx: 0, vy: 0, omega: 0, step };
+  const st = stateAt(step.traj, t - step.t0);
+  const ended = t >= step.t1;
+  return {
+    pose: { x: st.x, y: st.y, heading: st.heading },
+    vx: ended ? 0 : st.vx,
+    vy: ended ? 0 : st.vy,
+    omega: ended ? 0 : st.omega,
+    step,
+  };
+}
+
+export function buttonsAt(sched: Schedule, t: number): Set<ButtonId> {
+  const on = new Set<ButtonId>();
+  for (const sp of sched.spans) if (t >= sp.t0 && t < sp.t1) on.add(sp.button);
+  return on;
+}
