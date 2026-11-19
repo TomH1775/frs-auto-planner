@@ -9,14 +9,16 @@ import { readMode, readPhase, robotInfo } from './game';
 const CSS = `
 :host { all: initial; }
 .box { position: fixed; top: 64px; left: 12px; z-index: 2147483647; width: 300px; background: rgba(15,17,23,0.94);
+  display: flex; flex-direction: column; max-height: calc(100vh - 76px);
   color: #e5e7eb; font: 12px/1.4 system-ui, -apple-system, sans-serif; border: 1px solid #334155; border-radius: 10px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.5); user-select: none; }
-.hd { display: flex; align-items: center; gap: 6px; padding: 8px 10px; cursor: move; border-bottom: 1px solid #1f2937; }
+.hd { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 10px; cursor: move; border-bottom: 1px solid #1f2937; }
 .hd b { font-size: 13px; letter-spacing: .3px; color: #facc15; }
 .hd .sp { flex: 1; }
 .ic { background: none; border: 0; color: #94a3b8; cursor: pointer; font-size: 14px; padding: 0 4px; }
 .ic:hover { color: #fff; }
-.bd { padding: 8px 10px 10px; display: grid; gap: 8px; }
+.bd { padding: 8px 10px 10px; display: grid; gap: 8px; overflow-y: auto; min-height: 0; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: #475569 transparent; }
 .st { padding: 6px 8px; border-radius: 6px; background: #111827; border: 1px solid #1f2937; min-height: 18px; }
 .st.running { border-color: #22c55e; } .st.armed { border-color: #facc15; } .st.calibrating { border-color: #06b6d4; }
 .row { display: flex; gap: 6px; align-items: center; }
@@ -99,6 +101,13 @@ export function mountHud(runner: Runner) {
     if (t.matches('button')) t.blur();
   });
 
+  // the panel never runs off the bottom of the window; its body scrolls instead
+  const fitHeight = () => {
+    const top = box.getBoundingClientRect().top;
+    box.style.maxHeight = Math.max(120, window.innerHeight - top - 12) + 'px';
+  };
+  window.addEventListener('resize', fitHeight);
+
   // dragging
   const hd = $<HTMLDivElement>('.hd');
   hd.addEventListener('pointerdown', (e) => {
@@ -107,7 +116,8 @@ export function mountHud(runner: Runner) {
     const dx = e.clientX - r.left, dy = e.clientY - r.top;
     const move = (ev: PointerEvent) => {
       box.style.left = Math.max(0, ev.clientX - dx) + 'px';
-      box.style.top = Math.max(0, ev.clientY - dy) + 'px';
+      box.style.top = Math.min(window.innerHeight - 60, Math.max(0, ev.clientY - dy)) + 'px';
+      fitHeight();
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -116,6 +126,8 @@ export function mountHud(runner: Runner) {
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   });
+
+  root.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
 
   $('[data-min]').addEventListener('click', () => box.classList.toggle('min'));
   $('[data-close]').addEventListener('click', () => {
@@ -241,6 +253,7 @@ export function mountHud(runner: Runner) {
     if (t.pose) drawRobot(ctx, view, t.pose, { stroke: '#22c55e', fill: 'rgba(34,197,94,0.3)' });
   }
   refreshRoutines();
+  fitHeight();
   runner.onChange = render;
   const iv = setInterval(() => {
     try {
@@ -257,6 +270,7 @@ export function mountHud(runner: Runner) {
     },
     refresh: refreshRoutines,
     destroy() {
+      window.removeEventListener('resize', fitHeight);
       clearInterval(iv);
       host.remove();
     },
