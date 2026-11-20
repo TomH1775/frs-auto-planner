@@ -166,6 +166,22 @@ describe('schedule', () => {
     // stopping shots get no zone
     expect(buildSchedule({ ...r, actions: [{ ...shoot, stop: true }] }).zones).toHaveLength(0);
   });
+  it('a stop inside a moving shot uses up shot time (no extra slow driving afterwards)', () => {
+    const r = straight(10);
+    const shoot = { ...makeAction('shoot', { seg: 0, u: 0.1 }), stop: false, duration: 3, speedPct: 25 };
+    const wait = { ...makeAction('wait', { seg: 0, u: 0.2 }), duration: 1.5 };
+    r.actions = [shoot, wait];
+    const s = buildSchedule(r);
+    const v = C.maxVel * 0.25;
+    const z = s.zones[0];
+    // drive (0.2-0.1)*10 = 1 m slowly (1.33 s), park 1.5 s, leaving ~0.17 s => ~0.13 m past the wait
+    const drive1 = 1 / v;
+    expect(z.s1 - z.s0).toBeCloseTo(1 + v * (3 - drive1 - 1.5), 2);
+    // and once the shot's time is over, the robot is no longer held slow
+    const shotEnd = s.timing[shoot.id].t1;
+    const later = referenceAt(s, shotEnd + 1.0);
+    expect(Math.hypot(later.vx, later.vy)).toBeGreaterThan(v * 1.5);
+  });
   it('warns when over 20 s', () => {
     const r = straight(2);
     r.actions = [{ ...makeAction('wait', { seg: 0, u: 1 }), duration: 25 }];

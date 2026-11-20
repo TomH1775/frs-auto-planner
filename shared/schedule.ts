@@ -48,17 +48,6 @@ export function buildSchedule(r: Routine): Schedule {
     .map((a, order) => ({ a, order, s: posToS(path, a.at) }))
     .sort((p, q) => p.s - q.s || p.order - q.order);
 
-  // shooting on the move: hold a reduced speed from the action's spot for long enough
-  // to cover its duration at that speed (the robot slows down before reaching the spot)
-  const zones: (SpeedZone & { actionId: string })[] = [];
-  for (const it of withS) {
-    const f = moveSpeedFraction(it.a);
-    if (f === null || f >= 1) continue;
-    const v = Math.max(0.05, f * r.constraints.maxVel);
-    const s1 = Math.min(path.length, it.s + v * Math.max(0.1, it.a.duration));
-    if (s1 - it.s > 0.02) zones.push({ s0: it.s, s1, v, actionId: it.a.id }); // nothing to slow at the very end of the path
-  }
-
   // stop points split the path into legs that each start and end at rest
   const stopSpots: { s: number; actions: Action[] }[] = [];
   for (const it of withS) {
@@ -66,6 +55,33 @@ export function buildSchedule(r: Routine): Schedule {
     const last = stopSpots[stopSpots.length - 1];
     if (last && Math.abs(last.s - it.s) < SAME_SPOT) last.actions.push(it.a);
     else stopSpots.push({ s: it.s, actions: [it.a] });
+  }
+
+  // shooting on the move: hold a reduced speed from the action's spot until its time is used up.
+  // Time spent parked at stops inside the stretch (e.g. a Wait) counts toward the shot, so the
+  // slow stretch ends where the shot actually ends instead of carrying on after the stop.
+  const zones: (SpeedZone & { actionId: string })[] = [];
+  const stopTime = (spot: { actions: Action[] }) => Math.max(0.05, spot.actions.reduce((sum, a) => sum + Math.max(0, a.duration), 0));
+  for (const it of withS) {
+    const f = moveSpeedFraction(it.a);
+    if (f === null || f >= 1) continue;
+    const v = Math.max(0.05, f * r.constraints.maxVel);
+    let remaining = Math.max(0.1, it.a.duration);
+    let cursor = it.s;
+    let s1 = path.length;
+    for (const spot of stopSpots) {
+      if (spot.s <= it.s + 1e-6) continue; // stops at or before the shot's spot happen before it starts
+      const driveTime = (spot.s - cursor) / v;
+      if (driveTime >= remaining) break;
+      remaining -= driveTime + stopTime(spot);
+      cursor = spot.s;
+      if (remaining <= 0) {
+        s1 = spot.s;
+        break;
+      }
+    }
+    if (remaining > 0) s1 = Math.min(path.length, cursor + v * remaining);
+    if (s1 - it.s > 0.02) zones.push({ s0: it.s, s1, v, actionId: it.a.id }); // nothing to slow at the very end of the path
   }
 
   let t = 0;
