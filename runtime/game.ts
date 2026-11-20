@@ -311,3 +311,35 @@ export function readClock(): number | null {
   }
   return null;
 }
+
+/**
+ * Watches the scoreboard for the start/end of the Auto period. A new Auto is either the
+ * phase label turning into "Auto", or the clock jumping back up (match restarted with R).
+ */
+export class AutoWatch {
+  phase: string | null = null;
+  clock: number | null = null;
+  private lastPhase: string | null = null;
+  private lastClock: number | null = null;
+
+  /** Forget history (call when arming) so an Auto that's already running isn't treated as new. */
+  reset() {
+    this.lastPhase = readPhase();
+    this.lastClock = readClock();
+    this.phase = this.lastPhase;
+    this.clock = this.lastClock;
+  }
+
+  update(): { started: boolean; ended: boolean } {
+    const phase = readPhase();
+    const clock = readClock();
+    const started =
+      isAutoPhase(phase) && (!isAutoPhase(this.lastPhase) || (clock !== null && this.lastClock !== null && clock > this.lastClock + 0.5));
+    const ended = phase !== null && isAutoPhase(this.lastPhase) && !isAutoPhase(phase);
+    this.phase = phase;
+    this.clock = clock;
+    this.lastPhase = phase ?? this.lastPhase;
+    this.lastClock = clock ?? this.lastClock;
+    return { started, ended };
+  }
+}

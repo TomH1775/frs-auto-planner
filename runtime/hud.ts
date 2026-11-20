@@ -3,6 +3,7 @@ import { mirrorRoutine, parseRoutine, BUTTONS, BUTTON_IDS, type Routine } from '
 import { samplePath } from '../shared/path';
 import { allianceOfX } from '../shared/field';
 import type { Runner } from './runner';
+import type { Recorder } from './recorder';
 import { store } from './storage';
 import { readMode, readPhase, robotInfo } from './game';
 
@@ -20,7 +21,7 @@ const CSS = `
 .bd { padding: 8px 10px 10px; display: grid; gap: 8px; overflow-y: auto; min-height: 0; overscroll-behavior: contain;
   scrollbar-width: thin; scrollbar-color: #475569 transparent; }
 .st { padding: 6px 8px; border-radius: 6px; background: #111827; border: 1px solid #1f2937; min-height: 18px; }
-.st.running { border-color: #22c55e; } .st.armed { border-color: #facc15; } .st.calibrating { border-color: #06b6d4; }
+.st.running { border-color: #22c55e; } .st.recording { border-color: #ef4444; } .st.rec-armed { border-color: #f87171; } .st.armed { border-color: #facc15; } .st.calibrating { border-color: #06b6d4; }
 .row { display: flex; gap: 6px; align-items: center; }
 select, input, textarea { background: #0b0d12; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 4px 6px; font: inherit; }
 select { flex: 1; min-width: 0; }
@@ -30,6 +31,9 @@ button.b:hover { background: #273244; }
 button.go { background: #facc15; color: #111; border-color: #facc15; }
 button.go:hover { background: #fde047; }
 button.stop { background: #7f1d1d; border-color: #991b1b; }
+button.rec { background: #3a1414; border-color: #7f1d1d; color: #fecaca; }
+button.rec:hover { background: #4a1a1a; }
+.recres { padding: 6px 8px; border-radius: 6px; background: #111827; border: 1px solid #1f2937; display: grid; gap: 6px; }
 canvas { width: 100%; border-radius: 6px; display: block; }
 details summary { cursor: pointer; color: #94a3b8; }
 details .grid { display: grid; grid-template-columns: 1fr 70px; gap: 4px 8px; margin-top: 6px; align-items: center; }
@@ -38,7 +42,7 @@ details input { width: 100%; box-sizing: border-box; }
 .min .bd { display: none; }
 `;
 
-export function mountHud(runner: Runner) {
+export function mountHud(runner: Runner, recorder: Recorder) {
   document.getElementById('frs-auto-hud')?.remove();
   const host = document.createElement('div');
   host.id = 'frs-auto-hud';
@@ -57,6 +61,22 @@ export function mountHud(runner: Runner) {
         <button class="b" data-run title="Run right now (practice, any phase)">Run now</button>
         <button class="b stop" data-stop>Stop</button>
       </div>
+      <details data-rec><summary>Record a drive</summary>
+        <div class="muted" style="margin-top:6px">Drive the auto yourself. Your path, stops, and button presses (intake, shoot, climb, …) become a routine you can import into the planner.</div>
+        <div class="row" style="margin-top:6px">
+          <button class="b rec" data-rec-auto title="Starts when Auto begins, stops when Auto ends">⏺ Record next Auto</button>
+          <button class="b rec" data-rec-now title="Start recording right now">⏺ Now</button>
+          <button class="b stop" data-rec-stop>⏹ Stop</button>
+        </div>
+        <div class="recres" data-rec-result style="margin-top:6px; display:none">
+          <div data-rec-summary></div>
+          <div class="row">
+            <button class="b" data-rec-download>Download .json</button>
+            <button class="b" data-rec-copy>Copy JSON</button>
+          </div>
+          <div class="row"><button class="b" data-rec-add>Add to my autos</button></div>
+        </div>
+      </details>
       <details data-load><summary>Load routine</summary>
         <div style="margin-top:6px"><textarea data-json placeholder="Paste a routine from the FRS Auto planner (Copy routine)…"></textarea></div>
         <div class="row" style="margin-top:6px"><button class="b" data-paste>Load</button></div>
@@ -85,6 +105,10 @@ export function mountHud(runner: Runner) {
   const status = $<HTMLDivElement>('[data-status]');
   const phaseEl = $<HTMLSpanElement>('[data-phase]');
   const modeEl = $<HTMLDivElement>('[data-mode]');
+  const recResult = $<HTMLDivElement>('[data-rec-result]');
+  const recSummary = $<HTMLDivElement>('[data-rec-summary]');
+  // whichever of runner / recorder acted last owns the status line
+  let owner: 'runner' | 'recorder' = 'runner';
   const sel = $<HTMLSelectElement>('[data-routines]');
   const map = $<HTMLCanvasElement>('[data-map]');
   const ctx = map.getContext('2d')!;
@@ -154,9 +178,47 @@ export function mountHud(runner: Runner) {
     }
   });
 
-  $('[data-arm]').addEventListener('click', () => runner.arm());
-  $('[data-run]').addEventListener('click', () => runner.runNow());
-  $('[data-stop]').addEventListener('click', () => runner.stop());
+  const quietRecorder = () => {
+    if (recorder.state !== 'idle') recorder.stop();
+  };
+  const quietRunner = () => {
+    if (runner.t.state !== 'idle') runner.stop('Stopped (recording instead).');
+  };
+  $('[data-arm]').addEventListener('click', () => (quietRecorder(), runner.arm()));
+  $('[data-run]').addEventListener('click', () => (quietRecorder(), runner.runNow()));
+  $('[data-rec-auto]').addEventListener('click', () => (quietRunner(), recorder.armForAuto()));
+  $('[data-rec-now]').addEventListener('click', () => (quietRunner(), recorder.startNow()));
+  $('[data-rec-stop]').addEventListener('click', () => recorder.stop());
+  const recFileName = (r: Routine) => (r.name.replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'recorded-auto') + '.json';
+  $('[data-rec-download]').addEventListener('click', () => {
+    const r = recorder.result;
+    if (!r) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(r, null, 2)], { type: 'application/json' }));
+    a.download = recFileName(r);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  });
+  $('[data-rec-copy]').addEventListener('click', async () => {
+    const r = recorder.result;
+    if (!r) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(r));
+      recorder.message = 'Copied. In the planner: Import → paste.';
+    } catch {
+      recorder.message = "Couldn't copy here. Use Download .json instead.";
+    }
+    recorder.onChange();
+  });
+  $('[data-rec-add]').addEventListener('click', () => {
+    const r = recorder.result;
+    if (!r) return;
+    store.upsert(r);
+    refreshRoutines();
+    recorder.message = `Added "${r.name}" to your autos. Arm it to replay.`;
+    recorder.onChange();
+  });
+  $('[data-stop]').addEventListener('click', () => (quietRecorder(), runner.stop()));
   $('[data-calibrate]').addEventListener('click', () => void runner.calibrate());
   $('[data-paste]').addEventListener('click', () => {
     const ta = $<HTMLTextAreaElement>('[data-json]');
@@ -210,8 +272,16 @@ export function mountHud(runner: Runner) {
   const view = fitView(map.width, map.height, 8);
   function render() {
     const t = runner.t;
-    status.textContent = t.message + (t.state === 'running' ? `  ·  ${t.elapsed.toFixed(1)} s` : '');
-    status.className = 'st ' + t.state;
+    if (owner === 'recorder') {
+      status.textContent = recorder.message + (recorder.state === 'recording' ? '  ·  ' + recorder.liveSummary() : '');
+      status.className = 'st ' + (recorder.state === 'recording' ? 'recording' : recorder.state === 'armed' ? 'rec-armed' : '');
+    } else {
+      status.textContent = t.message + (t.state === 'running' ? `  ·  ${t.elapsed.toFixed(1)} s` : '');
+      status.className = 'st ' + t.state;
+    }
+    const res = recorder.result;
+    recResult.style.display = res && recorder.state === 'idle' ? '' : 'none';
+    if (res) recSummary.textContent = `${res.name} · ${res.waypoints.length} waypoints · ${res.actions.length} actions`;
     const ph = readPhase();
     phaseEl.textContent = ph ? '· ' + ph : '';
     if (ph) {
@@ -249,12 +319,31 @@ export function mountHud(runner: Runner) {
       });
       ctx.stroke();
     }
+    if (recorder.state === 'recording' && recorder.samples.length > 1) {
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      recorder.samples.forEach((p, i) => {
+        if (i % 3 && i !== recorder.samples.length - 1) return;
+        const { cx, cy } = toCanvas(view, p.x, p.y);
+        if (i) ctx.lineTo(cx, cy);
+        else ctx.moveTo(cx, cy);
+      });
+      ctx.stroke();
+    }
     if (t.state === 'running' && t.ref) drawRobot(ctx, view, t.ref, { stroke: '#facc15', fill: 'rgba(250,204,21,0.1)', alpha: 0.8 });
     if (t.pose) drawRobot(ctx, view, t.pose, { stroke: '#22c55e', fill: 'rgba(34,197,94,0.3)' });
   }
   refreshRoutines();
   fitHeight();
-  runner.onChange = render;
+  runner.onChange = () => {
+    owner = 'runner';
+    render();
+  };
+  recorder.onChange = () => {
+    owner = 'recorder';
+    render();
+  };
   const iv = setInterval(() => {
     try {
       render();

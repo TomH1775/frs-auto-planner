@@ -3,10 +3,12 @@
 import { attach } from './game';
 import { installPad } from './pad';
 import { Runner } from './runner';
+import { Recorder } from './recorder';
 import { loadRoutines, mountHud } from './hud';
 
 interface Api {
   runner: Runner;
+  recorder: Recorder;
   hud: ReturnType<typeof mountHud>;
   load: (data: unknown) => void;
   version: string;
@@ -39,6 +41,7 @@ async function boot() {
   if (existing && existing.version !== VERSION) {
     // a different build is loaded: replace it
     existing.runner.destroy();
+    existing.recorder?.destroy();
     existing.hud.destroy();
     delete window.__FRS_AUTO;
   } else if (existing) {
@@ -65,9 +68,11 @@ async function boot() {
     }
   }
   const runner = new Runner();
-  const hud = mountHud(runner);
+  const recorder = new Recorder();
+  const hud = mountHud(runner, recorder);
   window.__FRS_AUTO = {
     runner,
+    recorder,
     hud,
     version: VERSION,
     load(data: unknown) {

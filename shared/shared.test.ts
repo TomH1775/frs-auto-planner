@@ -214,3 +214,62 @@ describe('stick mapping', () => {
     expect(Math.abs(s.rx)).toBeLessThanOrEqual(1);
   });
 });
+
+describe('recording -> routine', () => {
+  // synthetic 60 Hz drive: straight while intaking, stop & shoot, L-turn while shooting on the move, stop & climb
+  function fakeDrive() {
+    const out: { t: number; x: number; y: number; heading: number; buttons: ('intake' | 'score' | 'climb')[] }[] = [];
+    for (let i = 0; i <= 450; i++) {
+      const t = i / 60;
+      let x: number, y: number, heading: number;
+      if (t < 2) [x, y, heading] = [2 + 2 * t, 2, 0];
+      else if (t < 4) [x, y, heading] = [6, 2, 0];
+      else if (t < 6.5) {
+        const f = (t - 4) / 2.5;
+        [x, y, heading] = [6, 2 + 3 * f, (Math.PI / 2) * f];
+      } else [x, y, heading] = [6, 5, Math.PI / 2];
+      const buttons: ('intake' | 'score' | 'climb')[] = [];
+      if (t >= 0.5 && t < 1.5) buttons.push('intake');
+      if ((t >= 2.3 && t < 4.0) || (t >= 4.5 && t < 5.5)) buttons.push('score');
+      if (t >= 6.7 && t < 7.0) buttons.push('climb');
+      out.push({ t: 100 + t, x, y, heading, buttons });
+    }
+    return out;
+  }
+
+  it('keeps the shape with few waypoints and recovers every action', async () => {
+    const { recordingToRoutine } = await import('./recording');
+    const r = recordingToRoutine(fakeDrive());
+    expect(r.waypoints.length).toBeLessThanOrEqual(6);
+    const first = r.waypoints[0], last = r.waypoints[r.waypoints.length - 1];
+    expect(first.x).toBeCloseTo(2, 1);
+    expect(last.x).toBeCloseTo(6, 1);
+    expect(last.y).toBeCloseTo(5, 1);
+    expect(r.waypoints.some((w) => Math.hypot(w.x - 6, w.y - 2) < 0.1)).toBe(true); // the stop corner
+
+    const types = r.actions.map((a) => a.type);
+    expect(types).toContain('intakeOn');
+    expect(types).toContain('intakeOff');
+    const shots = r.actions.filter((a) => a.type === 'shoot');
+    expect(shots).toHaveLength(2);
+    const parked = shots.find((a) => a.stop)!;
+    expect(parked.duration).toBeCloseTo(1.7, 1);
+    const moving = shots.find((a) => !a.stop)!;
+    expect(moving.speedPct).toBeGreaterThan(0);
+    expect(moving.speedPct).toBeLessThan(100);
+    const climb = r.actions.find((a) => a.type === 'climb')!;
+    expect(climb.stop).toBe(true);
+    // the 0.3 s before the parked shot becomes a wait
+    expect(r.actions.some((a) => a.type === 'wait' && Math.abs(a.duration - 0.3) < 0.1)).toBe(true);
+
+    const s = buildSchedule(r);
+    expect(s.warnings).toEqual([]);
+    expect(s.total).toBeGreaterThan(7.5 * 0.75);
+    expect(s.total).toBeLessThan(7.5 * 1.25);
+  });
+
+  it('rejects an empty recording', async () => {
+    const { recordingToRoutine } = await import('./recording');
+    expect(() => recordingToRoutine([])).toThrow(/too short/);
+  });
+});

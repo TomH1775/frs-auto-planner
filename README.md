@@ -29,6 +29,19 @@ To update a routine without re-dragging the bookmark, click **Copy routine** in 
 
 Taking over: press any key (Esc works) or touch a real controller, and the runtime lets go instantly.
 
+## Record an auto in FRS
+
+Instead of drawing a routine, you can drive it yourself and import the recording:
+
+1. In the FRS AUTO panel, open **Record a drive**.
+2. Click **⏺ Record next Auto**, then press **R** to restart the match (or click **⏺ Now** to start right away and **⏹ Stop** when done).
+3. Drive your auto normally. The panel records your path, where you stop, and every mechanism button you use (intake, shoot, climb, outtake, …). The minimap shows the recorded path in red.
+4. When Auto ends, click **Download .json** (or **Copy JSON**), then in the planner click **Import** and choose the file (or paste). **Add to my autos** saves it straight into the panel so you can replay it immediately.
+
+How it's converted: the path is simplified to a few waypoints with your headings. Places where you stopped become waypoints, and the corners stay sharp. Holding intake while driving becomes Intake on/off. Shooting or climbing while stopped becomes a stop action with the same duration. Shooting while moving becomes a moving Shoot at the speed you drove. Leftover standing time becomes a Wait. Speed limits are set from how fast you actually drove.
+
+Keyboard presses are read using FRS's default keys (Shift intake, Space/K score, Q outtake, F climb, I special, E intake-in, Z hood). If you rebound keys in FRS, record with a controller, or update `KEY_BINDINGS` in `runtime/recorder.ts`.
+
 ## Editing controls
 
 | | |

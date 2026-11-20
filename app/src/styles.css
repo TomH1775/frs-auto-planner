@@ -95,3 +95,7 @@ a { color: #93c5fd; }
   main { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
   aside { border-left: 0; border-top: 1px solid var(--line); }
 }
+
+.paste { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.paste textarea { min-height: 120px; resize: vertical; background: #0b0d12; color: var(--text); border: 1px solid #2d3546; border-radius: 6px; padding: 8px; font: 11px/1.4 ui-monospace, monospace; }
+button:disabled { opacity: .5; cursor: default; }

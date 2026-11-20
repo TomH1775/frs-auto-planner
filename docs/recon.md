@@ -60,3 +60,10 @@ The phase label is a leaf `<span>` in the scoreboard. Its text goes:
 - **Network view**: an exported object with `view.robots[{id, team, alliance, pos[3], quat[4]}]`, `localId`, `predicted`.
   Our robot = `view.robots.find(r => r.id === localId)`; the runtime picks the rendered `robot:N` nearest to its `pos`.
 - All three are found by shape, not module id. Ranked, events and spectating are refused; unknown states fail closed.
+
+## Recording (added 2026-11-19)
+- The recorder only reads input. Keyboard presses are tracked by `KeyboardEvent.code` using FRS's default bindings:
+  ShiftLeft/ShiftRight → intake, Space/KeyK → score, KeyQ → outtake, KeyF → climb, KeyI → special,
+  KeyE → intake in, KeyZ → hood up. Controller buttons go through the panel's pad mapping.
+- FRS allows only one active match across tabs ("Match in another tab"), so test in a browser profile
+  that isn't playing.

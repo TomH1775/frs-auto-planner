@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { ACTION_TYPES, parseRoutine, type Routine } from '../../shared/routine';
+import { useEffect, useState } from 'react';
+import { ACTION_TYPES } from '../../shared/routine';
 import { FieldCanvas } from './FieldCanvas';
+import { ImportModal } from './ImportModal';
 import { SendToFRS } from './SendToFRS';
 import { ActionList, ConstraintsPanel, Inspector, ToolPalette } from './Sidebar';
 import { Timeline } from './Timeline';
@@ -15,13 +16,11 @@ function download(name: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-function TopBar({ onSend }: { onSend: () => void }) {
+function TopBar({ onSend, onImport }: { onSend: () => void; onImport: () => void }) {
   const routines = useStore((s) => s.routines);
   const currentId = useStore((s) => s.currentId);
   const r = useRoutine();
   const s = useStore.getState();
-  const file = useRef<HTMLInputElement>(null);
-  const [err, setErr] = useState('');
 
   return (
     <header className="topbar">
@@ -41,7 +40,7 @@ function TopBar({ onSend }: { onSend: () => void }) {
       <button onClick={() => s.mirror()} title="Flip the routine to the other alliance (rotate 180°)">
         Flip alliance
       </button>
-      <button onClick={() => file.current?.click()}>Import</button>
+      <button onClick={onImport}>Import</button>
       <button onClick={() => download(`${r.name.replace(/[^\w-]+/g, '_')}.json`, JSON.stringify(r, null, 2))}>Export</button>
       <button
         className="danger"
@@ -52,37 +51,16 @@ function TopBar({ onSend }: { onSend: () => void }) {
         Delete
       </button>
       <span className="grow" />
-      {err && <span className="warn">{err}</span>}
       <button className="go" onClick={onSend}>
         Send to FRS ▸
       </button>
-      <input
-        ref={file}
-        type="file"
-        accept=".json,application/json"
-        multiple
-        hidden
-        onChange={async (e) => {
-          const out: Routine[] = [];
-          try {
-            for (const f of Array.from(e.target.files ?? [])) {
-              const data = JSON.parse(await f.text());
-              for (const item of Array.isArray(data) ? data : [data]) out.push(parseRoutine(JSON.stringify(item)));
-            }
-            s.importRoutines(out);
-            setErr('');
-          } catch (x) {
-            setErr('Import failed: ' + (x as Error).message);
-          }
-          e.target.value = '';
-        }}
-      />
     </header>
   );
 }
 
 export function App() {
   const [send, setSend] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -114,7 +92,7 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar onSend={() => setSend(true)} />
+      <TopBar onSend={() => setSend(true)} onImport={() => setImporting(true)} />
       <main>
         <FieldCanvas />
         <aside>
@@ -126,6 +104,7 @@ export function App() {
       </main>
       <Timeline />
       {send && <SendToFRS onClose={() => setSend(false)} />}
+      {importing && <ImportModal onClose={() => setImporting(false)} />}
     </div>
   );
 }

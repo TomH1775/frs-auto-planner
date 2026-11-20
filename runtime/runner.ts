@@ -2,7 +2,7 @@ import { FIELD, allianceOfX, wrapAngle, type Pose } from '../shared/field';
 import { mirrorRoutine, type Routine } from '../shared/routine';
 import { buildSchedule, buttonsAt, referenceAt, type Schedule } from '../shared/schedule';
 import { stickFromVelocity } from '../shared/stick';
-import { isAutoPhase, readClock, readMode, readPhase, readPose, robotInfo } from './game';
+import { AutoWatch, isAutoPhase, readMode, readPose, robotInfo } from './game';
 import { isActive, realInputActive, setActive, setButtons, setSticks } from './pad';
 import { store } from './storage';
 
@@ -31,8 +31,7 @@ export class Runner {
   private waited = 0;
   private lastFrame = 0;
   private gated = false;
-  private lastPhase: string | null = null;
-  private lastClock: number | null = null;
+  private watch = new AutoWatch();
   /** when Auto started while armed; we retry briefly because FRS rebuilds the robot on restart */
   private pendingStart = 0;
   private keyHandler = (e: KeyboardEvent) => {
@@ -70,14 +69,13 @@ export class Runner {
     const err = this.guard();
     if (err) return this.set('idle', err);
     if (!store.selected()) return this.set('idle', 'No routine loaded. Paste one in "Load routine".');
-    this.lastPhase = readPhase();
-    this.lastClock = readClock();
+    this.watch.reset();
     // armed in the first second of auto (e.g. right after pressing R): just go
-    if (isAutoPhase(this.lastPhase) && (this.lastClock ?? 0) >= 19) {
+    if (isAutoPhase(this.watch.phase) && (this.watch.clock ?? 0) >= 19) {
       this.begin(true);
       return;
     }
-    this.set('armed', isAutoPhase(this.lastPhase) ? 'Armed. Auto is already running, so this waits for the next one (press R to restart the match).' : 'Armed. Runs when Auto starts (press R to restart the match).');
+    this.set('armed', isAutoPhase(this.watch.phase) ? 'Armed. Auto is already running, so this waits for the next one (press R to restart the match).' : 'Armed. Runs when Auto starts (press R to restart the match).');
   }
 
   /** Run immediately (practice / teleop testing). */
@@ -143,14 +141,9 @@ export class Runner {
 
   private tick(now: number, dt: number) {
     const st = this.t.state;
-    const phase = readPhase();
     const settings = store.settings();
-
-    const clock = readClock();
-    // a new auto period: phase just became Auto, or the clock jumped back up (match restarted with R)
-    const autoStarted = isAutoPhase(phase) && (!isAutoPhase(this.lastPhase) || (clock !== null && this.lastClock !== null && clock > this.lastClock + 0.5));
-    this.lastPhase = phase ?? this.lastPhase;
-    this.lastClock = clock ?? this.lastClock;
+    const { started: autoStarted } = this.watch.update();
+    const phase = this.watch.phase;
 
     if (st === 'armed') {
       if (autoStarted) this.pendingStart = now;
