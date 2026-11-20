@@ -1,6 +1,6 @@
-import { BUTTONS, BUTTON_IDS, parseRoutine, type ButtonId, type Routine } from '../shared/routine';
+import { buttonIds, gameOf, parseRoutine, type ButtonId, type Routine } from '../shared/routine';
 import { DEFAULT_CALIBRATION, type Calibration } from '../shared/stick';
-import type { FrontAxis } from './game';
+import { DEFAULT_FRONT, GAME, type FrontAxis } from './game';
 
 export interface Settings {
   cal: Calibration;
@@ -14,14 +14,18 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   cal: { ...DEFAULT_CALIBRATION },
-  front: '-x',
-  buttonMap: Object.fromEntries(BUTTON_IDS.map((b) => [b, BUTTONS[b].pad])) as Record<ButtonId, number>,
+  front: DEFAULT_FRONT,
+  buttonMap: Object.fromEntries(buttonIds(GAME).map((b) => [b, GAME.buttons[b].pad])),
   autoRearm: true,
   kP: 2.5,
   kTheta: 3,
 };
 
-const K = { routines: 'frsAuto:routines', selected: 'frsAuto:selected', settings: 'frsAuto:settings' };
+const K = {
+  routines: 'frsAuto:routines',
+  selected: 'frsAuto:selected:' + GAME.id,
+  settings: GAME.id === 'rebuilt' ? 'frsAuto:settings' : 'frsAuto:settings:' + GAME.id,
+};
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -59,9 +63,12 @@ let settings: Settings = (() => {
   };
 })();
 
+/** Routines for the game on this page (all games are kept in storage). */
+const mine = () => routines.filter((r) => gameOf(r).id === GAME.id);
+
 export const store = {
-  routines: () => routines,
-  selected: () => routines.find((r) => r.id === selected) ?? routines[0] ?? null,
+  routines: mine,
+  selected: () => mine().find((r) => r.id === selected) ?? mine()[0] ?? null,
   select(id: string) {
     selected = id;
     write(K.selected, id);

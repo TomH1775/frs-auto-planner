@@ -67,3 +67,23 @@ The phase label is a leaf `<span>` in the scoreboard. Its text goes:
   KeyE → intake in, KeyZ → hood up. Controller buttons go through the panel's pad mapping.
 - FRS allows only one active match across tabs ("Match in another tab"), so test in a browser profile
   that isn't playing.
+
+## Reefscape and Crescendo (added 2026-11-20)
+Same stack (Next.js + Turbopack + Three r186, same module-cache trick). Differences from Rebuilt:
+
+| | Reefscape (reefscape.frsim.com) | Crescendo (crescendo.frsim.com) |
+|---|---|---|
+| Field (FRS map) | 17.548 × 8.052, rotational symmetry | 16.541 × 8.211, **mirror** symmetry |
+| Auto | 15 s, label `Autonomous` | 15 s, label `Auto` (countdown `Get ready`) |
+| Scene | objects are **unnamed**, so no scene lookup | unnamed |
+| Our pose | network view `view.robots.find(r => r.local)` → `{x, z, yaw}` (populated in singleplayer too) | exported `{position, yaw, shooterDir, ready}` object |
+| Yaw | front = `(sin yaw, cos yaw)` in scene (X, Z), so field heading = yaw − π/2; side offsets: front 0, back π, right π/2, left −π/2 | same |
+| Drive | field-relative, driver perspective (same as Rebuilt) | field-relative in third-person/station cameras; **robot-relative in `firstPerson`**: scene velocity = moveY·(sin e, cos e) + moveX·(−cos e, sin e), with e = yaw + offset[intake.side] |
+| Stores | game store `{screen, matchId, alliance, team, ...}`; net store `{status, room, myId, ranked, event, ...}` | game store `{phase, alliance, teamNumber, cameraMode, online, ...}`; net store `{status, room, myId, watching, ...}`; no Ranked |
+
+Default pad mappings (standard indices):
+- Reefscape: Intake LT 6, Score RT 7, Climb L-stick 10, Setpoints 1–4 = A0 B1 X2 Y3, Left/Right pole LB4/RB5, Coral/algae D-down 13, Intake mode D-right 15.
+- Crescendo: Intake LT 6, Shoot RT 7, Amp RB 5, Outtake LB 4, Climb L-stick 10.
+
+FRS also contains a hidden built-in auto runner (PathPlanner-like projects with named commands for
+real teams' bots), switched off by a feature flag that always returns false. It isn't used here.

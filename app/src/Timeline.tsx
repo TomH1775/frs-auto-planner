@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { ACTIONS, AUTO_LENGTH, BUTTONS, type ButtonId } from '../../shared/routine';
+import { ACTIONS, actionLabel, buttonLabel, type ButtonId } from '../../shared/routine';
 import { useStore } from './store';
-import { useRoutine, useSchedule } from './useSchedule';
+import { useGame, useRoutine, useSchedule } from './useSchedule';
 
 export function Timeline() {
   const sched = useSchedule();
   const r = useRoutine();
+  const game = useGame();
+  const AUTO_LENGTH = game.autoLength;
   const previewT = useStore((s) => s.previewT);
   const playing = useStore((s) => s.playing);
   const setPreviewT = useStore((s) => s.setPreviewT);
@@ -101,7 +103,7 @@ export function Timeline() {
                   {st.actionIds
                     .map((id) => r.actions.find((a) => a.id === id))
                     .filter(Boolean)
-                    .map((a) => ACTIONS[a!.type].label)
+                    .map((a) => actionLabel(a!.type, game))
                     .join(' → ')}
                 </div>
               ),
@@ -119,7 +121,7 @@ export function Timeline() {
         </div>
         {buttonsUsed.map((b) => (
           <div className="tl-row" key={b}>
-            <label>{BUTTONS[b].label}</label>
+            <label>{buttonLabel(game, b)}</label>
             <div className="lane">
               {sched.spans
                 .filter((x) => x.button === b)
@@ -135,7 +137,7 @@ export function Timeline() {
                         e.stopPropagation();
                         select({ kind: 'action', id: x.actionId });
                       }}
-                      title={a ? ACTIONS[a.type].label : ''}
+                      title={a ? actionLabel(a.type, game) : ''}
                     />
                   );
                 })}

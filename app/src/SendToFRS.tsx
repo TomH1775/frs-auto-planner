@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import runtimeCode from '../../runtime-dist/frs-auto-runtime.js?raw';
 import { useStore } from './store';
-import { useRoutine } from './useSchedule';
+import { useGame, useRoutine } from './useSchedule';
 import type { Routine } from '../../shared/routine';
 
 /** Script that installs the runtime in the FRS tab with these routines preloaded. */
@@ -26,6 +26,7 @@ async function copy(text: string): Promise<boolean> {
 
 export function SendToFRS({ onClose }: { onClose: () => void }) {
   const current = useRoutine();
+  const game = useGame();
   const routines = useStore((s) => s.routines);
   const [all, setAll] = useState(true);
   const [msg, setMsg] = useState('');
@@ -60,16 +61,16 @@ export function SendToFRS({ onClose }: { onClose: () => void }) {
                 ⚡ FRS Auto
               </a>
               <label className="check">
-                <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> include all {routines.length} routines
+                <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> include all {routines.length} routines (every game)
               </label>
             </div>
             <span className="hint">The bookmark carries the autos inside it. Re-drag it after big changes, or use "Copy routine" below.</span>
           </li>
           <li>
-            Open <a href="https://rebuilt.frsim.com" target="_blank" rel="noreferrer">rebuilt.frsim.com</a>, start a <b>Singleplayer</b> match or join a <b>Multiplayer</b> room, and click the bookmark. The FRS AUTO panel appears.
+            Open <a href={`https://${game.host}`} target="_blank" rel="noreferrer">{game.host}</a>, start a <b>Singleplayer</b> match or join a <b>Multiplayer</b> room, and click the bookmark. The FRS AUTO panel appears.
           </li>
           <li>
-            Choose your auto and click <b>Arm for Auto</b> before the match starts. It drives the routine when Auto begins and re-arms for the next match. (In Singleplayer, press <kbd>R</kbd> to restart and run it again.)
+            The panel shows this game's autos. Choose one and click <b>Arm for Auto</b> before the match starts. It drives the routine when Auto begins and re-arms for the next match. (In Singleplayer, press <kbd>R</kbd> to restart and run it again.)
           </li>
           <li>
             The first time, open <b>Setup &amp; calibration</b> → <b>Calibrate</b> with the robot in open space (for example the neutral zone).

@@ -1,30 +1,23 @@
 // Records the driver's own run (pose + mechanism buttons) so it can be turned into a routine.
 // Read-only: it never drives, so the real controller/keyboard reach the game untouched.
 import { recordingToRoutine, type RecSample } from '../shared/recording';
-import { BUTTON_IDS, type ButtonId, type Routine } from '../shared/routine';
-import { AutoWatch, readMode, readPose } from './game';
+import { buttonIds, type ButtonId, type Routine } from '../shared/routine';
+import { AutoWatch, GAME, readMode, readPose } from './game';
 import { realPads } from './pad';
 import { store } from './storage';
 
 export type RecState = 'idle' | 'armed' | 'recording';
 
 /**
- * FRS's default keyboard bindings (Settings → Keyboard). If you rebind keys in FRS,
- * update this map; controller buttons follow the pad numbers in Setup & calibration.
+ * FRS's default keyboard bindings for this game (Settings → Keyboard), by KeyboardEvent.code.
+ * If you rebind keys in FRS, record with a controller or update the game's `keys` in
+ * shared/field.ts; controller buttons follow the pad numbers in Setup & calibration.
  */
-export const KEY_BINDINGS: Record<string, ButtonId> = {
-  ShiftLeft: 'intake',
-  ShiftRight: 'intake',
-  Space: 'score',
-  KeyK: 'score',
-  KeyQ: 'outtake',
-  KeyF: 'climb',
-  KeyI: 'special',
-  KeyE: 'intakeIn',
-  KeyZ: 'hoodUp',
-};
+export const KEY_BINDINGS: Record<string, ButtonId> = Object.fromEntries(
+  buttonIds(GAME).flatMap((b) => GAME.buttons[b].keys.map((code) => [code, b] as const)),
+);
 
-const LAST_KEY = 'frsAuto:lastRecording';
+const LAST_KEY = 'frsAuto:lastRecording:' + GAME.id;
 const MAX_SECONDS = 180;
 
 export class Recorder {
@@ -108,7 +101,7 @@ export class Recorder {
       return;
     }
     try {
-      this.result = recordingToRoutine(this.samples);
+      this.result = recordingToRoutine(this.samples, { game: GAME.id });
       try {
         localStorage.setItem(LAST_KEY, JSON.stringify(this.result));
       } catch {
@@ -130,7 +123,7 @@ export class Recorder {
     }
     const map = store.settings().buttonMap;
     for (const pad of realPads()) {
-      for (const b of BUTTON_IDS) {
+      for (const b of buttonIds(GAME)) {
         const btn = pad.buttons[map[b]];
         if (btn && (btn.pressed || btn.value > 0.5)) on.add(b);
       }

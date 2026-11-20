@@ -1,6 +1,8 @@
 # FRS Auto Planner
 
-Draw autonomous routines for **FRS 2026 Rebuilt** (rebuilt.frsim.com) and have them actually drive your robot in Auto.
+Draw autonomous routines for all three FRS games, **2026 Rebuilt**, **2025 Reefscape** and **2024 Crescendo** (frsim.com), and have them actually drive your robot in Auto.
+
+Pick the game with the switcher in the planner's top bar. Each game has its own field, Auto length (Rebuilt 20 s, Reefscape and Crescendo 15 s), and buttons (Reefscape's L1–L4 setpoints and poles, Crescendo's amp, and so on, under **Press button**). One bookmark works on every game's site, and the panel shows the autos for the game you're on.
 
 - **Planner app** (`app/`): draw a path on the field, set robot headings, and drop action items on the path: intake on/off, intake for N s, shoot, climb, any button, and wait. A timeline shows when everything happens and warns if the routine runs past the 20 s auto period.
 - **In-game runtime** (`runtime/`): loaded into the FRS tab by a bookmarklet. It reads the robot's position from the game and follows the path closed-loop. It drives through a virtual gamepad (the same input a real controller gives) and presses the mechanism buttons at the right moments.
@@ -21,7 +23,7 @@ npm run dev        # builds the runtime, then serves the app at http://localhost
 ## Use it in FRS
 
 1. In the app, click **Send to FRS** and drag the **⚡ FRS Auto** button to your bookmarks bar.
-2. Open rebuilt.frsim.com, start a **Singleplayer** match or join a **Multiplayer** room, and click the bookmark. The FRS AUTO panel appears.
+2. Open the game (rebuilt.frsim.com, reefscape.frsim.com or crescendo.frsim.com), start a **Singleplayer** match or join a **Multiplayer** room, and click the bookmark. The FRS AUTO panel appears.
 3. The first time only: open **Setup & calibration**, drive to open space (for example the neutral zone), and click **Calibrate**.
 4. Pick your routine and click **Arm for Auto** before the match starts. The routine runs when Auto begins and the panel re-arms itself for the next match. In Singleplayer you can press **R** to restart and run it again.
 
@@ -57,7 +59,9 @@ Square action markers stop the robot while they run. Round ones happen while dri
 
 **Shooting on the move:** select a Shoot action and uncheck *Stop the robot while doing this*. The robot automatically slows to a percentage of the routine's max speed for the whole time it shoots (default 50%, adjustable with the slider). The slowed stretch shows as a thick orange band on the path and a striped "slow" block on the timeline.
 
-Coordinates are WPILib-style, in meters, with the origin at the blue wall. Heading 0° faces the red wall. The robot's *front* is its intake side. Routines drawn on one alliance are mirrored automatically when you play the other one.
+Coordinates are WPILib-style, in meters, with the origin at the blue wall. Heading 0° faces the red wall. The robot's *front* is its intake side. Routines drawn on one alliance are moved to the other automatically when you play it. Rebuilt and Reefscape are rotated 180°, and Crescendo is mirrored left-to-right, matching each field.
+
+Crescendo's **first-person** camera drives robot-relative. FRS Auto detects the camera mode and converts automatically.
 
 ## Notes
 

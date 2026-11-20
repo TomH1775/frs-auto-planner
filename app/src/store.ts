@@ -1,7 +1,9 @@
 import { create } from 'zustand';
+import type { GameId } from '../../shared/field';
 import {
   applyAutoHandles,
   blankRoutine,
+  gameOf,
   makeAction,
   makeWaypoint,
   mirrorRoutine,
@@ -76,6 +78,8 @@ interface State extends Persisted {
   setConstraints: (c: Partial<Constraints>) => void;
   rename: (name: string) => void;
   newRoutine: () => void;
+  /** show another game's autos (creates a blank one if there are none yet) */
+  switchGame: (g: GameId) => void;
   duplicate: () => void;
   deleteRoutine: () => void;
   switchTo: (id: string) => void;
@@ -196,7 +200,7 @@ export const useStore = create<State>((set, get) => {
     },
 
     addAction: (type, at) => {
-      const a = makeAction(type, at);
+      const a = makeAction(type, at, gameOf(get().current()));
       get().edit((r) => ({ ...r, actions: [...r.actions, a] }));
       set({ selection: { kind: 'action', id: a.id } });
     },
@@ -208,8 +212,16 @@ export const useStore = create<State>((set, get) => {
 
     setConstraints: (c) => get().edit((r) => ({ ...r, constraints: { ...r.constraints, ...c } })),
     rename: (name) => get().edit((r) => ({ ...r, name }), false),
+    switchGame: (g) => {
+      const existing = get().routines.find((r) => gameOf(r).id === g);
+      if (existing) return get().switchTo(existing.id);
+      const r = blankRoutine(`${g[0].toUpperCase() + g.slice(1)} auto 1`, g);
+      set((s) => ({ routines: [...s.routines, r], currentId: r.id, selection: null, past: [], future: [], tool: 'waypoint', previewT: 0 }));
+    },
     newRoutine: () => {
-      const r = blankRoutine(`Auto ${get().routines.length + 1}`);
+      const game = gameOf(get().current()).id;
+      const count = get().routines.filter((r) => gameOf(r).id === game).length;
+      const r = blankRoutine(`Auto ${count + 1}`, game);
       set((s) => ({ routines: [...s.routines, r], currentId: r.id, selection: null, past: [], future: [], tool: 'waypoint', previewT: 0 }));
     },
     duplicate: () => {
@@ -219,9 +231,11 @@ export const useStore = create<State>((set, get) => {
     },
     deleteRoutine: () => {
       const { routines, currentId } = get();
+      const game = gameOf(get().current()).id;
       const rest = routines.filter((r) => r.id !== currentId);
-      if (rest.length === 0) rest.push(blankRoutine('Auto 1'));
-      set({ routines: rest, currentId: rest[0].id, selection: null, past: [], future: [], previewT: 0 });
+      const next = rest.find((r) => gameOf(r).id === game) ?? blankRoutine('Auto 1', game);
+      if (!rest.includes(next)) rest.push(next);
+      set({ routines: rest, currentId: next.id, selection: null, past: [], future: [], previewT: 0 });
     },
     switchTo: (id) => set({ currentId: id, selection: null, past: [], future: [], previewT: 0, playing: false }),
     importRoutines: (rs) => {

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { ACTION_TYPES } from '../../shared/routine';
+import { ACTION_TYPES, gameOf } from '../../shared/routine';
+import { GAMES, GAME_IDS } from '../../shared/field';
 import { FieldCanvas } from './FieldCanvas';
 import { ImportModal } from './ImportModal';
 import { SendToFRS } from './SendToFRS';
 import { ActionList, ConstraintsPanel, Inspector, ToolPalette } from './Sidebar';
 import { Timeline } from './Timeline';
 import { useStore } from './store';
-import { useRoutine } from './useSchedule';
+import { useGame, useRoutine } from './useSchedule';
 
 function download(name: string, text: string) {
   const a = document.createElement('a');
@@ -20,15 +21,23 @@ function TopBar({ onSend, onImport }: { onSend: () => void; onImport: () => void
   const routines = useStore((s) => s.routines);
   const currentId = useStore((s) => s.currentId);
   const r = useRoutine();
+  const game = useGame();
   const s = useStore.getState();
 
   return (
     <header className="topbar">
       <div className="brand">
-        FRS <span>AUTO</span> <small>2026 Rebuilt</small>
+        FRS <span>AUTO</span>
+      </div>
+      <div className="games" role="tablist" aria-label="Game">
+        {GAME_IDS.map((g) => (
+          <button key={g} role="tab" aria-selected={game.id === g} className={game.id === g ? 'on' : ''} onClick={() => s.switchGame(g)}>
+            {GAMES[g].name} <small>{GAMES[g].year}</small>
+          </button>
+        ))}
       </div>
       <select value={currentId} onChange={(e) => s.switchTo(e.target.value)}>
-        {routines.map((x) => (
+        {routines.filter((x) => gameOf(x).id === game.id).map((x) => (
           <option key={x.id} value={x.id}>
             {x.name}
           </option>

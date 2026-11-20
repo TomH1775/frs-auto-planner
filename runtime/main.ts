@@ -1,6 +1,7 @@
 // FRS Auto in-game runtime. Loaded by the bookmarklet the planner app generates
 // (or pasted into the console). Safe to run more than once.
 import { attach } from './game';
+import { gameFromHost } from '../shared/field';
 import { installPad } from './pad';
 import { Runner } from './runner';
 import { Recorder } from './recorder';
@@ -49,8 +50,8 @@ async function boot() {
     existing.hud.show();
     return;
   }
-  if (!/(^|\.)frsim\.com$/.test(location.hostname)) {
-    toast('open rebuilt.frsim.com first, then click the bookmark again.');
+  if (!gameFromHost(location.hostname)) {
+    toast('open a game on frsim.com (Rebuilt, Reefscape or Crescendo) first, then click the bookmark again.');
     return;
   }
   try {

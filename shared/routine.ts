@@ -1,24 +1,26 @@
-import { DEFAULT_BLUE_START, mirrorPoint, wrapAngle } from './field';
+import { DEFAULT_GAME, GAMES, getGame, mirrorHeading, mirrorPoint, mirrorVec, type GameDef, type GameId } from './field';
 
 export interface Vec2 {
   x: number;
   y: number;
 }
 
-/** Robot mechanisms we can trigger. `pad` is the standard-gamepad button index FRS uses by default. */
-export type ButtonId = 'intake' | 'score' | 'outtake' | 'climb' | 'special' | 'intakeIn' | 'hoodUp';
+/** A robot mechanism button; ids are per game (see GameDef.buttons). */
+export type ButtonId = string;
 
-export const BUTTONS: Record<ButtonId, { label: string; pad: number; key: string }> = {
-  intake: { label: 'Intake', pad: 6, key: 'Shift' },
-  score: { label: 'Score / Shoot', pad: 7, key: 'Space' },
-  outtake: { label: 'Outtake', pad: 4, key: 'Q' },
-  climb: { label: 'Climb', pad: 3, key: 'F' },
-  special: { label: 'Robot special', pad: 5, key: 'I' },
-  intakeIn: { label: 'Intake in', pad: 2, key: 'E' },
-  hoodUp: { label: 'Hood up', pad: 1, key: 'Z' },
-};
+export function buttonIds(g: GameDef): ButtonId[] {
+  return Object.keys(g.buttons);
+}
 
-export const BUTTON_IDS = Object.keys(BUTTONS) as ButtonId[];
+export function buttonLabel(g: GameDef, id: ButtonId): string {
+  return g.buttons[id]?.label ?? id;
+}
+
+/** Buttons that aren't already covered by the intake / score / climb actions. */
+export function extraButtons(g: GameDef): ButtonId[] {
+  const roles = new Set(Object.values(g.roles));
+  return buttonIds(g).filter((b) => !roles.has(b));
+}
 
 export type ActionType = 'intakeOn' | 'intakeOff' | 'intakeFor' | 'shoot' | 'climb' | 'button' | 'wait';
 
@@ -36,13 +38,18 @@ export const ACTIONS: Record<ActionType, ActionMeta> = {
   intakeOn: { label: 'Intake on', short: 'I+', color: '#22c55e', hasDuration: false, defaultDuration: 0, defaultStop: false, help: 'Start intaking here and keep going until an "Intake off" (or auto ends).' },
   intakeOff: { label: 'Intake off', short: 'I−', color: '#64748b', hasDuration: false, defaultDuration: 0, defaultStop: false, help: 'Stop intaking here.' },
   intakeFor: { label: 'Intake for…', short: 'I', color: '#16a34a', hasDuration: true, defaultDuration: 1.5, defaultStop: false, help: 'Run the intake for a set time starting here.' },
-  shoot: { label: 'Shoot', short: 'S', color: '#f59e0b', hasDuration: true, defaultDuration: 2, defaultStop: true, help: 'Hold the score button for a set time.' },
+  shoot: { label: 'Shoot / Score', short: 'S', color: '#f59e0b', hasDuration: true, defaultDuration: 2, defaultStop: true, help: 'Hold the score button for a set time.' },
   climb: { label: 'Climb', short: 'C', color: '#a855f7', hasDuration: true, defaultDuration: 0.2, defaultStop: true, help: 'Press the climb button. Raise the time to hold it longer.' },
   button: { label: 'Press button', short: 'B', color: '#06b6d4', hasDuration: true, defaultDuration: 0.2, defaultStop: false, help: 'Press or hold any robot button.' },
   wait: { label: 'Wait', short: 'W', color: '#ef4444', hasDuration: true, defaultDuration: 1, defaultStop: true, help: 'Stop here for a set time.' },
 };
 
 export const ACTION_TYPES = Object.keys(ACTIONS) as ActionType[];
+
+/** Action label in this game's words (e.g. "Shoot" vs "Score"). */
+export function actionLabel(type: ActionType, g: GameDef): string {
+  return type === 'shoot' ? g.scoreLabel : ACTIONS[type].label;
+}
 
 /** Position on the path: segment index (between waypoint seg and seg+1) and Bézier parameter u ∈ [0,1]. */
 export interface PathPos {
@@ -92,13 +99,17 @@ export interface Routine {
   version: 1;
   id: string;
   name: string;
+  /** which FRS game this auto is for (missing = Rebuilt, for routines made before multi-game) */
+  game?: GameId;
   waypoints: Waypoint[];
   actions: Action[];
   constraints: Constraints;
   updatedAt: number;
 }
 
-export const AUTO_LENGTH = 20;
+export function gameOf(r: { game?: GameId }): GameDef {
+  return getGame(r.game);
+}
 
 export const DEFAULT_SHOOT_SPEED_PCT = 50;
 
@@ -115,18 +126,18 @@ export function uid(prefix = ''): string {
   return prefix + Math.random().toString(36).slice(2, 10);
 }
 
-export function buttonForAction(a: Action): ButtonId | null {
+export function buttonForAction(a: Action, g: GameDef): ButtonId | null {
   switch (a.type) {
     case 'intakeOn':
     case 'intakeOff':
     case 'intakeFor':
-      return 'intake';
+      return g.roles.intake;
     case 'shoot':
-      return 'score';
+      return g.roles.score;
     case 'climb':
-      return 'climb';
+      return g.roles.climb;
     case 'button':
-      return a.button ?? 'special';
+      return a.button && a.button in g.buttons ? a.button : extraButtons(g)[0] ?? null;
     case 'wait':
       return null;
   }
@@ -136,9 +147,10 @@ export function makeWaypoint(x: number, y: number, heading: number | null = null
   return { id: uid('w'), x, y, heading, hin: { x: 0, y: 0 }, hout: { x: 0, y: 0 }, autoHandles: true };
 }
 
-export function makeAction(type: ActionType, at: PathPos): Action {
+export function makeAction(type: ActionType, at: PathPos, g: GameDef = GAMES[DEFAULT_GAME]): Action {
   const m = ACTIONS[type];
-  return { id: uid('a'), type, at, duration: m.defaultDuration, stop: m.defaultStop, ...(type === 'button' ? { button: 'special' as ButtonId } : {}) };
+  const button = type === 'button' ? extraButtons(g)[0] ?? buttonIds(g)[0] : undefined;
+  return { id: uid('a'), type, at, duration: m.defaultDuration, stop: m.defaultStop, ...(button ? { button } : {}) };
 }
 
 /** Recompute automatic (Catmull-Rom style) handles for waypoints flagged autoHandles. */
@@ -161,8 +173,9 @@ export function applyAutoHandles(wps: Waypoint[]): Waypoint[] {
   });
 }
 
+/** The demo auto for a fresh planner (Rebuilt). */
 export function newRoutine(name = 'New auto'): Routine {
-  const s = DEFAULT_BLUE_START;
+  const s = GAMES.rebuilt.defaultStart;
   const wps = applyAutoHandles([
     makeWaypoint(s.x, s.y, s.heading),
     makeWaypoint(7.2, 7.2, null),
@@ -175,6 +188,7 @@ export function newRoutine(name = 'New auto'): Routine {
     version: 1,
     id: uid('r'),
     name,
+    game: 'rebuilt',
     waypoints: wps,
     actions: [
       makeAction('intakeOn', { seg: 0, u: 0.6 }),
@@ -186,21 +200,22 @@ export function newRoutine(name = 'New auto'): Routine {
   };
 }
 
-export function blankRoutine(name = 'New auto'): Routine {
-  const s = DEFAULT_BLUE_START;
-  return { version: 1, id: uid('r'), name, waypoints: [makeWaypoint(s.x, s.y, s.heading)], actions: [], constraints: { ...DEFAULT_CONSTRAINTS }, updatedAt: Date.now() };
+export function blankRoutine(name = 'New auto', game: GameId = DEFAULT_GAME): Routine {
+  const s = GAMES[game].defaultStart;
+  return { version: 1, id: uid('r'), name, game, waypoints: [makeWaypoint(s.x, s.y, s.heading)], actions: [], constraints: { ...DEFAULT_CONSTRAINTS }, updatedAt: Date.now() };
 }
 
-/** Rotate the whole routine 180° about field center (blue <-> red). */
+/** Move the whole routine to the other alliance (rotated or mirrored, per the game). */
 export function mirrorRoutine(r: Routine): Routine {
+  const g = gameOf(r);
   return {
     ...r,
     waypoints: r.waypoints.map((w) => ({
       ...w,
-      ...mirrorPoint(w),
-      heading: w.heading === null ? null : wrapAngle(w.heading + Math.PI),
-      hin: { x: -w.hin.x, y: -w.hin.y },
-      hout: { x: -w.hout.x, y: -w.hout.y },
+      ...mirrorPoint(g, w),
+      heading: w.heading === null ? null : mirrorHeading(g, w.heading),
+      hin: mirrorVec(g, w.hin),
+      hout: mirrorVec(g, w.hout),
     })),
   };
 }
@@ -217,5 +232,6 @@ export function parseRoutine(json: string): Routine {
   for (const a of r.actions) {
     if (!(a.type in ACTIONS)) throw new Error(`Unknown action type "${a.type}".`);
   }
+  if (r.game !== undefined && !(r.game in GAMES)) throw new Error(`Unknown game "${r.game}".`);
   return r;
 }

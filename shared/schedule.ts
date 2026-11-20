@@ -1,6 +1,6 @@
 import type { Pose } from './field';
 import { posToS, samplePath, sampleAt, type SampledPath } from './path';
-import { ACTIONS, AUTO_LENGTH, buttonForAction, moveSpeedFraction, type Action, type ButtonId, type Routine } from './routine';
+import { ACTIONS, buttonForAction, gameOf, moveSpeedFraction, type Action, type ButtonId, type Routine } from './routine';
 import { duration, profileRange, stateAt, timeAtS, type SpeedZone, type TrajState } from './trajectory';
 
 export type Step =
@@ -38,6 +38,7 @@ export interface Schedule {
 const SAME_SPOT = 0.01; // m: stop actions this close together run back-to-back at one spot
 
 export function buildSchedule(r: Routine): Schedule {
+  const game = gameOf(r);
   const path = samplePath(r.waypoints);
   const warnings: string[] = [];
   const steps: Step[] = [];
@@ -142,20 +143,20 @@ export function buildSchedule(r: Routine): Schedule {
     }
     if (a.type === 'intakeOff') {
       if (intakeOn) {
-        spans.push({ button: 'intake', t0: intakeOn.t0, t1: tm.t0, actionId: intakeOn.id });
+        spans.push({ button: game.roles.intake, t0: intakeOn.t0, t1: tm.t0, actionId: intakeOn.id });
         timing[intakeOn.id].t1 = tm.t0;
         intakeOn = null;
       } else warnings.push('"Intake off" with no "Intake on" before it.');
       continue;
     }
-    const b = buttonForAction(a);
+    const b = buttonForAction(a, game);
     if (b && ACTIONS[a.type].hasDuration) spans.push({ button: b, t0: tm.t0, t1: tm.t0 + Math.max(0.1, a.duration), actionId: a.id });
   }
-  if (intakeOn) spans.push({ button: 'intake', t0: intakeOn.t0, t1: Infinity, actionId: intakeOn.id });
+  if (intakeOn) spans.push({ button: game.roles.intake, t0: intakeOn.t0, t1: Infinity, actionId: intakeOn.id });
 
   const finite = spans.map((x) => x.t1).filter(Number.isFinite);
   const total = Math.max(driveEnd, ...finite, 0);
-  if (total > AUTO_LENGTH) warnings.push(`Routine takes ${total.toFixed(1)} s but auto is only ${AUTO_LENGTH} s.`);
+  if (total > game.autoLength) warnings.push(`Routine takes ${total.toFixed(1)} s but auto is only ${game.autoLength} s.`);
   for (const a of r.actions) {
     if (a.type === 'wait' && !a.stop) warnings.push('A "Wait" that does not stop the robot does nothing.');
   }

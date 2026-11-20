@@ -1,11 +1,11 @@
 import { drawField, drawPathLine, drawRobot, fitView, toCanvas } from '../shared/draw';
-import { mirrorRoutine, parseRoutine, BUTTONS, BUTTON_IDS, type Routine } from '../shared/routine';
+import { buttonIds, gameOf, mirrorRoutine, parseRoutine, type Routine } from '../shared/routine';
 import { samplePath } from '../shared/path';
 import { allianceOfX } from '../shared/field';
 import type { Runner } from './runner';
 import type { Recorder } from './recorder';
 import { store } from './storage';
-import { readMode, readPhase, robotInfo } from './game';
+import { GAME, readMode, readPhase, robotInfo } from './game';
 
 const CSS = `
 :host { all: initial; }
@@ -49,7 +49,7 @@ export function mountHud(runner: Runner, recorder: Recorder) {
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${CSS}</style>
   <div class="box">
-    <div class="hd"><b>FRS AUTO</b><span class="muted" data-phase></span><span class="sp"></span>
+    <div class="hd"><b>FRS AUTO</b><span class="muted">${GAME.name}</span><span class="muted" data-phase></span><span class="sp"></span>
       <button class="ic" data-min title="Minimize">–</button><button class="ic" data-close title="Close">×</button></div>
     <div class="bd">
       <div class="st" data-status></div>
@@ -90,9 +90,9 @@ export function mountHud(runner: Runner, recorder: Recorder) {
           <span>Stick deadzone</span><input data-cal="deadzone" type="number" step="0.01">
           <span>Position gain</span><input data-gain="kP" type="number" step="0.1">
           <span>Heading gain</span><input data-gain="kTheta" type="number" step="0.1">
-          <span>Robot front axis</span><select data-front><option>-x</option><option>+x</option><option>-z</option><option>+z</option></select>
+          <span>Robot front axis</span><select data-front>${(GAME.id === 'rebuilt' ? ['-x', '+x', '-z', '+z'] : ['front', 'back', 'left', 'right']).map((o) => `<option>${o}</option>`).join('')}</select>
           <span>Re-arm after each auto</span><input data-rearm type="checkbox">
-          ${BUTTON_IDS.map((b) => `<span>${BUTTONS[b].label} (pad #)</span><input data-btn="${b}" type="number" min="0" max="16">`).join('')}
+          ${buttonIds(GAME).map((b) => `<span>${GAME.buttons[b].label} (pad #)</span><input data-btn="${b}" type="number" min="0" max="16">`).join('')}
         </div>
         <div class="muted" style="margin-top:6px">Esc, any key, or a real controller hands control back to you instantly.</div>
       </details>
@@ -269,7 +269,7 @@ export function mountHud(runner: Runner, recorder: Recorder) {
 
   // minimap
   let cachedPath: { id: string; alliance: string; path: ReturnType<typeof samplePath> } | null = null;
-  const view = fitView(map.width, map.height, 8);
+  const view = fitView(map.width, map.height, 8, GAME);
   function render() {
     const t = runner.t;
     if (owner === 'recorder') {
@@ -294,14 +294,14 @@ export function mountHud(runner: Runner, recorder: Recorder) {
       modeEl.style.color = mode.allowed ? '' : '#fca5a5';
     } else modeEl.textContent = '';
 
-    drawField(ctx, view);
+    drawField(ctx, view, GAME);
     let path = t.state === 'running' && t.schedule ? t.schedule.path : null;
     if (!path) {
       const r = store.selected();
       if (r) {
-        const al = t.pose ? allianceOfX(t.pose.x) : 'blue';
+        const al = t.pose ? allianceOfX(GAME, t.pose.x) : 'blue';
         if (!cachedPath || cachedPath.id !== r.id + r.updatedAt || cachedPath.alliance !== al) {
-          const drawnFor = r.waypoints.length ? allianceOfX(r.waypoints[0].x) : 'blue';
+          const drawnFor = r.waypoints.length ? allianceOfX(GAME, r.waypoints[0].x) : 'blue';
           cachedPath = { id: r.id + r.updatedAt, alliance: al, path: samplePath((drawnFor === al ? r : mirrorRoutine(r)).waypoints) };
         }
         path = cachedPath.path;
@@ -331,8 +331,8 @@ export function mountHud(runner: Runner, recorder: Recorder) {
       });
       ctx.stroke();
     }
-    if (t.state === 'running' && t.ref) drawRobot(ctx, view, t.ref, { stroke: '#facc15', fill: 'rgba(250,204,21,0.1)', alpha: 0.8 });
-    if (t.pose) drawRobot(ctx, view, t.pose, { stroke: '#22c55e', fill: 'rgba(34,197,94,0.3)' });
+    if (t.state === 'running' && t.ref) drawRobot(ctx, view, t.ref, { size: GAME.robotSize, stroke: '#facc15', fill: 'rgba(250,204,21,0.1)', alpha: 0.8 });
+    if (t.pose) drawRobot(ctx, view, t.pose, { size: GAME.robotSize, stroke: '#22c55e', fill: 'rgba(34,197,94,0.3)' });
   }
   refreshRoutines();
   fitHeight();
@@ -377,9 +377,13 @@ export function loadRoutines(input: string | unknown) {
   const data = JSON.parse(text);
   const list: unknown[] = Array.isArray(data) ? data : [data];
   let last: Routine | null = null;
+  let other = 0;
   for (const item of list) {
-    last = parseRoutine(JSON.stringify(item));
-    store.upsert(last);
+    const r = parseRoutine(JSON.stringify(item));
+    store.upsert(r);
+    if (gameOf(r).id === GAME.id) last = r;
+    else other++;
   }
   if (last) store.select(last.id);
+  else if (other) throw new Error(`That routine is for a different game, not ${GAME.name}.`);
 }

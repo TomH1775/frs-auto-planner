@@ -1,8 +1,9 @@
 // Turn a recorded drive (poses + buttons held over time) into an editable Routine.
-import { wrapAngle } from './field';
+import { wrapAngle, type GameId } from './field';
 import {
   applyAutoHandles,
-  BUTTON_IDS,
+  buttonIds,
+  gameOf,
   DEFAULT_CONSTRAINTS,
   DEFAULT_LAT_ACCEL,
   makeAction,
@@ -32,6 +33,8 @@ export interface RecOptions {
   minPause?: number;
   /** path simplification tolerance (m) */
   epsilon?: number;
+  /** which game the recording was made in */
+  game?: GameId;
 }
 
 interface Pause {
@@ -91,6 +94,7 @@ function cornerHandles(list: Waypoint[], stopped: boolean[]): Waypoint[] {
 }
 
 export function recordingToRoutine(raw: RecSample[], opts: RecOptions = {}): Routine {
+  const game = gameOf({ game: opts.game });
   const pauseSpeed = opts.pauseSpeed ?? 0.15;
   const minPause = opts.minPause ?? 0.4;
   const eps = opts.epsilon ?? 0.12;
@@ -246,7 +250,7 @@ export function recordingToRoutine(raw: RecSample[], opts: RecOptions = {}): Rou
     list.push([a, b]);
     stopIntervals.set(k, list);
   };
-  for (const btn of BUTTON_IDS) {
+  for (const btn of buttonIds(game)) {
     let start: number | null = null;
     const runs: [number, number][] = [];
     for (let i = 0; i < n; i++) {
@@ -267,18 +271,18 @@ export function recordingToRoutine(raw: RecSample[], opts: RecOptions = {}): Rou
       const p = stop ? pauseFor(a, b) : undefined;
       const k = p ? pauseWpIndex(p) : -1;
       const at = k >= 0 ? spotOf(k) : posAt(a);
-      if (btn === 'intake') {
+      if (btn === game.roles.intake) {
         if (stop && k >= 0) {
-          acts.push({ a: { ...makeAction('intakeFor', at), duration: dur, stop: true }, time: a, spot: k });
+          acts.push({ a: { ...makeAction('intakeFor', at, game), duration: dur, stop: true }, time: a, spot: k });
           addStop(k, a, a + dur);
         } else {
-          acts.push({ a: makeAction('intakeOn', posAt(a)), time: a });
-          if (bRaw !== Infinity && bRaw < tEnd - 0.05) acts.push({ a: makeAction('intakeOff', posAt(bRaw)), time: bRaw });
+          acts.push({ a: makeAction('intakeOn', posAt(a), game), time: a });
+          if (bRaw !== Infinity && bRaw < tEnd - 0.05) acts.push({ a: makeAction('intakeOff', posAt(bRaw), game), time: bRaw });
         }
         continue;
       }
-      const type = btn === 'score' ? 'shoot' : btn === 'climb' ? 'climb' : 'button';
-      const action: Action = { ...makeAction(type, at), duration: dur, stop: stop && k >= 0 };
+      const type = btn === game.roles.score ? 'shoot' : btn === game.roles.climb ? 'climb' : 'button';
+      const action: Action = { ...makeAction(type, at, game), duration: dur, stop: stop && k >= 0 };
       if (type === 'button') action.button = btn;
       if (type === 'shoot' && !action.stop) {
         const pct = Math.round(((avgSpeed(a, b) / maxVel) * 100) / 5) * 5;
@@ -305,7 +309,7 @@ export function recordingToRoutine(raw: RecSample[], opts: RecOptions = {}): Rou
     const isEnd = k === wps.length - 1;
     for (const [a, b] of gaps) {
       if (b - a < 0.25 || (isEnd && b >= tEnd - 0.05)) continue;
-      acts.push({ a: { ...makeAction('wait', spotOf(k)), duration: +(b - a).toFixed(2), stop: true }, time: a, spot: k });
+      acts.push({ a: { ...makeAction('wait', spotOf(k), game), duration: +(b - a).toFixed(2), stop: true }, time: a, spot: k });
     }
   }
 
@@ -315,6 +319,7 @@ export function recordingToRoutine(raw: RecSample[], opts: RecOptions = {}): Rou
     version: 1,
     id: uid('r'),
     name: opts.name ?? `Recorded auto · ${stamp}`,
+    game: game.id,
     waypoints: cornerHandles(applyAutoHandles(wps.map((w) => w.wp)), wps.map((w) => !!w.pause)),
     actions: acts.map((x) => x.a),
     constraints: { maxVel, maxAccel, maxAngVel, maxLatAccel: DEFAULT_LAT_ACCEL },

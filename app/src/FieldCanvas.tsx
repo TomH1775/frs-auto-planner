@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { drawField, drawPathLine, drawRobot, fitView, toCanvas, toField, type View } from '../../shared/draw';
-import { FIELD } from '../../shared/field';
 import { nearestOnPath, posToS, sampleAt } from '../../shared/path';
-import { ACTIONS, type ActionType, type Routine } from '../../shared/routine';
+import { ACTIONS, actionLabel, type ActionType, type Routine } from '../../shared/routine';
 import { referenceAt, type Schedule } from '../../shared/schedule';
 import { useStore } from './store';
-import { useRoutine, useSchedule } from './useSchedule';
+import { useGame, useRoutine, useSchedule } from './useSchedule';
 
 const HEADING_KNOB = 0.75; // m from waypoint center
 const HIT = 10; // px
@@ -33,6 +32,7 @@ export function FieldCanvas() {
 
   const routine = useRoutine();
   const sched = useSchedule();
+  const game = useGame();
   const tool = useStore((s) => s.tool);
   const selection = useStore((s) => s.selection);
   const previewT = useStore((s) => s.previewT);
@@ -45,7 +45,7 @@ export function FieldCanvas() {
     return () => ro.disconnect();
   }, []);
 
-  const view: View = fitView(size.w, size.h, 28);
+  const view: View = fitView(size.w, size.h, 28, game);
 
   // ---- drawing ----
   useEffect(() => {
@@ -56,21 +56,21 @@ export function FieldCanvas() {
     const ctx = c.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, size.w, size.h);
-    drawField(ctx, view, { labels: true });
+    drawField(ctx, view, game, { labels: true });
 
     // alliance wall labels
     ctx.font = '600 11px system-ui, sans-serif';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#60a5fa';
-    const bl = toCanvas(view, 0, FIELD.width / 2);
+    const bl = toCanvas(view, 0, game.field.width / 2);
     ctx.save();
     ctx.translate(bl.cx - 14, bl.cy);
     ctx.rotate(-Math.PI / 2);
     ctx.fillText('BLUE DRIVER STATION', 0, 0);
     ctx.restore();
     ctx.fillStyle = '#f87171';
-    const rl = toCanvas(view, FIELD.length, FIELD.width / 2);
+    const rl = toCanvas(view, game.field.length, game.field.width / 2);
     ctx.save();
     ctx.translate(rl.cx + 14, rl.cy);
     ctx.rotate(Math.PI / 2);
@@ -100,7 +100,7 @@ export function FieldCanvas() {
     // heading ghosts
     wps.forEach((w) => {
       if (w.heading === null) return;
-      drawRobot(ctx, view, { x: w.x, y: w.y, heading: w.heading }, { stroke: 'rgba(148,163,184,0.7)', fill: 'rgba(148,163,184,0.08)' });
+      drawRobot(ctx, view, { x: w.x, y: w.y, heading: w.heading }, { size: game.robotSize, stroke: 'rgba(148,163,184,0.7)', fill: 'rgba(148,163,184,0.08)' });
     });
 
     // handles for the selected waypoint
@@ -186,7 +186,7 @@ export function FieldCanvas() {
     // preview robot
     if (sched.path.samples.length) {
       const ref = referenceAt(sched, previewT);
-      drawRobot(ctx, view, ref.pose, { stroke: '#facc15', fill: 'rgba(250,204,21,0.3)' });
+      drawRobot(ctx, view, ref.pose, { size: game.robotSize, stroke: '#facc15', fill: 'rgba(250,204,21,0.3)' });
     }
 
     // tool hint near cursor
@@ -195,7 +195,7 @@ export function FieldCanvas() {
       ctx.fillStyle = 'rgba(226,232,240,0.8)';
       ctx.font = '11px system-ui, sans-serif';
       ctx.textAlign = 'left';
-      const label = tool === 'waypoint' ? '+ waypoint' : '+ ' + ACTIONS[tool].label;
+      const label = tool === 'waypoint' ? '+ waypoint' : '+ ' + actionLabel(tool, game);
       ctx.fillText(label, c.cx + 12, c.cy + 14);
       if (tool !== 'waypoint') {
         const n = nearestOnPath(sched.path, hover.x, hover.y);
@@ -208,7 +208,7 @@ export function FieldCanvas() {
         }
       }
     }
-  }, [size, routine, sched, selection, previewT, hover, tool]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [size, routine, sched, selection, previewT, hover, tool, game]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- interaction ----
   function hitTest(cx: number, cy: number): Hit {
@@ -249,7 +249,7 @@ export function FieldCanvas() {
     return { cx: e.clientX - r.left, cy: e.clientY - r.top };
   }
 
-  const clampField = (p: { x: number; y: number }) => ({ x: Math.max(0, Math.min(FIELD.length, p.x)), y: Math.max(0, Math.min(FIELD.width, p.y)) });
+  const clampField = (p: { x: number; y: number }) => ({ x: Math.max(0, Math.min(game.field.length, p.x)), y: Math.max(0, Math.min(game.field.width, p.y)) });
 
   function onPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
