@@ -15,8 +15,9 @@ Findings that the runtime (`runtime/`) depends on. If FRS updates and auto break
 
 ## Scene coordinates
 - Y is up. The field is centered at the origin. X runs along the field length (blue wall at X = -8.27, red at +8.27).
-  The guardrails sit at Z = ±4.011.
-- Converting to WPILib blue-origin field coordinates: `x = X + 8.27`, `y = 4.011 - Z`.
+  The carpet is 16.541 × 8.069 m (Z = ±4.0347). Exact dimensions come from FRS's own field map: the SVG on the
+  Singleplayer setup screen (`[aria-label^="Field map"]`) is drawn in meters with a viewBox centered on the field.
+- Converting to WPILib blue-origin field coordinates: `x = X + 8.2705`, `y = 4.0347 - Z`.
 - Robot node: `robot:<team>` (nested in groups, so use `matrixWorld`). Ignore copies under `shader-warmup-robot`.
 - **Robot front = local −X** (`part:intake_arm` is at local x ≈ −0.44). So the front direction in world space is
   `(-m[0], -m[2])` from `matrixWorld.elements`, and field heading = `atan2(m[2], -m[0])`.
@@ -48,8 +49,8 @@ The phase label is a leaf `<span>` in the scoreboard. Its text goes:
 `Ready` → `Starting` (3-2-1, "GO") → **`Auto`** (20 s) → `Auto scoring` → `Transition · 0:10` → `Shift N · m:ss` → `End game`.
 - Auto start = the label becomes exactly `Auto`. Auto end = anything else.
 - Singleplayer has exactly one `robot:<n>` in the scene. Mode detection (singleplayer / multiplayer / ranked) is described below.
-- Blue default start: about (4.44, 7.57) facing −y. Red start is the blue start rotated 180° about the field center.
-  The field is rotationally symmetric, so `mirror(x, y, θ) = (16.54 − x, 8.022 − y, θ + π)`.
+- Blue default start: (4.445, 7.600) facing −y. The blue starting line is at x = 4.003. Red start is the blue start rotated 180°.
+  The field is rotationally symmetric, so `mirror(x, y, θ) = (16.541 − x, 8.069 − y, θ + π)`.
 
 ## Multiplayer (added 2026-11-18)
 - Robots are named `robot:<team number>` in every mode, so two players with the same robot share a name.

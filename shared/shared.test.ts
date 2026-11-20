@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FIELD, mirrorPose, simToField, wrapAngle } from './field';
+import { FIELD, FIELD_ELEMENTS, mirrorPose, simToField, wrapAngle } from './field';
 import { nearestOnPath, posToS, samplePath, sampleAt } from './path';
 import { applyAutoHandles, makeAction, makeWaypoint, mirrorRoutine, newRoutine, parseRoutine, type Routine } from './routine';
 import { buildSchedule, buttonsAt, referenceAt } from './schedule';
@@ -31,10 +31,20 @@ describe('field', () => {
     expect(m.y).toBeCloseTo(FIELD.width - 2);
     expect(Math.abs(m.heading)).toBeCloseTo(Math.PI);
   });
-  it('converts sim coordinates (recon: blue start at X=-3.826, Z=-3.562)', () => {
-    const p = simToField(-3.826, -3.562);
-    expect(p.x).toBeCloseTo(4.444, 2);
-    expect(p.y).toBeCloseTo(7.573, 2);
+  it('converts sim coordinates (FRS map: blue start at X=-3.8259, Z=-3.5653)', () => {
+    const p = simToField(-3.825875, -3.565337);
+    expect(p.x).toBeCloseTo(4.4446, 3);
+    expect(p.y).toBeCloseTo(7.6, 3);
+  });
+  it('matches the FRS field map (16.541 x 8.069 m, 1.194 m hub)', () => {
+    expect(FIELD.length).toBeCloseTo(16.541, 3);
+    expect(FIELD.width).toBeCloseTo(8.069, 3);
+    const hub = FIELD_ELEMENTS.find((e) => e.name === 'Blue hub')!;
+    expect(hub.x1 - hub.x0).toBeCloseTo(1.194, 3);
+    expect((hub.y0 + hub.y1) / 2).toBeCloseTo(FIELD.width / 2, 3);
+    // red is blue rotated about the center
+    const red = FIELD_ELEMENTS.find((e) => e.name === 'Red hub')!;
+    expect(red.x0).toBeCloseTo(FIELD.length - hub.x1, 6);
   });
 });
 
