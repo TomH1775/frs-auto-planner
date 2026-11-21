@@ -75,9 +75,9 @@ function centerOf(s: Shape): { x: number; y: number } {
   }
 }
 
-export function drawField(ctx: CanvasRenderingContext2D, v: View, g: GameDef, opts: { labels?: boolean } = {}) {
+export function drawField(ctx: CanvasRenderingContext2D, v: View, g: GameDef, opts: { labels?: boolean; bg?: string; edge?: string } = {}) {
   const { cx: x0, cy: y0 } = toCanvas(v, 0, v.W);
-  ctx.fillStyle = '#1b1f27';
+  ctx.fillStyle = opts.bg ?? '#1b1f27';
   ctx.fillRect(x0, y0, v.L * v.scale, v.W * v.scale);
   for (const s of g.shapes) {
     const look = LOOK[s.style];
@@ -102,7 +102,7 @@ export function drawField(ctx: CanvasRenderingContext2D, v: View, g: GameDef, op
       ctx.fillText(s.label, c.cx, c.cy);
     }
   }
-  ctx.strokeStyle = '#475569';
+  ctx.strokeStyle = opts.edge ?? '#475569';
   ctx.lineWidth = 2;
   ctx.strokeRect(x0, y0, v.L * v.scale, v.W * v.scale);
 }

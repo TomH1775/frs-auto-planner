@@ -7,40 +7,56 @@ import type { Recorder } from './recorder';
 import { store } from './storage';
 import { GAME, readMode, readPhase, robotInfo } from './game';
 
+// Fall theme to match FRS's Thanksgiving look: warm browns, cream text, gold accents.
 const CSS = `
-:host { all: initial; }
-.box { position: fixed; top: 64px; left: 12px; z-index: 2147483647; width: 300px; background: rgba(15,17,23,0.94);
+:host { all: initial;
+  --bg: rgba(27,19,14,0.96); --card: #231912; --card-2: #2b1f16; --line: #3b2c20; --line-2: #4a3727;
+  --text: #f5ede3; --muted: #b8a796; --gold: #f2b950; --gold-2: #f7c96b; --gold-ink: #2a1a0a;
+  --ember: #e0692b; --leaf: #c2581f; --danger: #8f2a1c; --danger-line: #b23a24; }
+.box { position: fixed; top: 64px; left: 12px; z-index: 2147483647; width: 300px; background: var(--bg);
   display: flex; flex-direction: column; max-height: calc(100vh - 76px);
-  color: #e5e7eb; font: 12px/1.4 system-ui, -apple-system, sans-serif; border: 1px solid #334155; border-radius: 10px;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.5); user-select: none; }
-.hd { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 10px; cursor: move; border-bottom: 1px solid #1f2937; }
-.hd b { font-size: 13px; letter-spacing: .3px; color: #facc15; }
+  color: var(--text); font: 12px/1.4 system-ui, -apple-system, sans-serif; border: 1px solid var(--line-2); border-radius: 12px;
+  box-shadow: 0 10px 34px rgba(0,0,0,0.55), inset 0 1px 0 rgba(242,185,80,0.06); user-select: none; overflow: hidden; }
+.hd { position: relative; flex: none; display: flex; align-items: center; gap: 6px; padding: 9px 10px 9px 30px; cursor: move;
+  border-bottom: 1px solid var(--line); background: linear-gradient(180deg, rgba(242,185,80,0.07), transparent); }
+.hd .leaf { position: absolute; left: 8px; top: 50%; width: 16px; height: 16px; margin-top: -8px; color: var(--leaf); transform: rotate(-18deg); }
+.hd b { font-size: 13px; letter-spacing: .4px; color: var(--gold); }
 .hd .sp { flex: 1; }
-.ic { background: none; border: 0; color: #94a3b8; cursor: pointer; font-size: 14px; padding: 0 4px; }
-.ic:hover { color: #fff; }
-.bd { padding: 8px 10px 10px; display: grid; gap: 8px; overflow-y: auto; min-height: 0; overscroll-behavior: contain;
-  scrollbar-width: thin; scrollbar-color: #475569 transparent; }
-.st { padding: 6px 8px; border-radius: 6px; background: #111827; border: 1px solid #1f2937; min-height: 18px; }
-.st.running { border-color: #22c55e; } .st.recording { border-color: #ef4444; } .st.rec-armed { border-color: #f87171; } .st.armed { border-color: #facc15; } .st.calibrating { border-color: #06b6d4; }
+.ic { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 4px; }
+.ic:hover { color: var(--gold-2); }
+.bd { padding: 9px 10px 11px; display: grid; gap: 8px; overflow-y: auto; min-height: 0; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+.st { padding: 7px 9px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); min-height: 18px; }
+.st.running { border-color: #6fbf73; } .st.recording { border-color: var(--ember); } .st.rec-armed { border-color: #e8955e; }
+.st.armed { border-color: var(--gold); box-shadow: 0 0 0 1px rgba(242,185,80,0.25); } .st.calibrating { border-color: #d9a441; }
 .row { display: flex; gap: 6px; align-items: center; }
-select, input, textarea { background: #0b0d12; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 4px 6px; font: inherit; }
+select, input, textarea { background: #1a120d; color: var(--text); border: 1px solid var(--line-2); border-radius: 7px; padding: 4px 6px; font: inherit; }
+select:focus, input:focus, textarea:focus { outline: none; border-color: var(--gold); }
 select { flex: 1; min-width: 0; }
 textarea { width: 100%; box-sizing: border-box; height: 70px; resize: vertical; font-family: ui-monospace, monospace; font-size: 11px; }
-button.b { flex: 1; background: #1f2937; color: #e5e7eb; border: 1px solid #374151; border-radius: 6px; padding: 6px 4px; cursor: pointer; font: 600 12px system-ui, sans-serif; }
-button.b:hover { background: #273244; }
-button.go { background: #facc15; color: #111; border-color: #facc15; }
-button.go:hover { background: #fde047; }
-button.stop { background: #7f1d1d; border-color: #991b1b; }
-button.rec { background: #3a1414; border-color: #7f1d1d; color: #fecaca; }
-button.rec:hover { background: #4a1a1a; }
-.recres { padding: 6px 8px; border-radius: 6px; background: #111827; border: 1px solid #1f2937; display: grid; gap: 6px; }
-canvas { width: 100%; border-radius: 6px; display: block; }
-details summary { cursor: pointer; color: #94a3b8; }
+input[type='checkbox'] { accent-color: var(--gold); }
+button.b { flex: 1; background: var(--card-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 4px; cursor: pointer;
+  font: 700 12px system-ui, sans-serif; letter-spacing: .2px; }
+button.b:hover { background: #33251a; border-color: #5a4330; }
+button.go { background: var(--gold); color: var(--gold-ink); border-color: var(--gold); flex: 1.45; white-space: nowrap; }
+button.go:hover { background: var(--gold-2); border-color: var(--gold-2); }
+button.stop { background: var(--danger); border-color: var(--danger-line); color: #fde6dc; }
+button.stop:hover { background: #a3321f; }
+button.rec { background: #3a1d12; border-color: #7a3a1d; color: #ffd8c2; }
+button.rec:hover { background: #4a2516; }
+.recres { padding: 7px 9px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); display: grid; gap: 6px; }
+canvas { width: 100%; border-radius: 8px; display: block; border: 1px solid var(--line); box-sizing: border-box; }
+details summary { cursor: pointer; color: var(--muted); }
+details summary:hover { color: var(--gold-2); }
+details[open] summary { color: var(--gold); }
 details .grid { display: grid; grid-template-columns: 1fr 70px; gap: 4px 8px; margin-top: 6px; align-items: center; }
 details input { width: 100%; box-sizing: border-box; }
-.muted { color: #94a3b8; font-size: 11px; }
+.muted { color: var(--muted); font-size: 11px; }
 .min .bd { display: none; }
 `;
+
+// maple leaf, like the one by FRS's logo
+const LEAF = `<svg class="leaf" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.5l1.9 4.1 2.4-1.2-.6 4.4 3.6-2.5.3 2.3 3.1-.6-1.7 3.6 1.9 1-4.9 4 .7 2-5-1-.3 4.9h-1.6l-.3-4.9-5 1 .7-2-4.9-4 1.9-1L1.3 8l3.1.6.3-2.3 3.6 2.5-.6-4.4 2.4 1.2z"/></svg>`;
 
 export function mountHud(runner: Runner, recorder: Recorder) {
   document.getElementById('frs-auto-hud')?.remove();
@@ -49,7 +65,7 @@ export function mountHud(runner: Runner, recorder: Recorder) {
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${CSS}</style>
   <div class="box">
-    <div class="hd"><b>FRS AUTO</b><span class="muted">${GAME.name}</span><span class="muted" data-phase></span><span class="sp"></span>
+    <div class="hd">${LEAF}<b>FRS AUTO</b><span class="muted">${GAME.name}</span><span class="muted" data-phase></span><span class="sp"></span>
       <button class="ic" data-min title="Minimize">–</button><button class="ic" data-close title="Close">×</button></div>
     <div class="bd">
       <div class="st" data-status></div>
@@ -294,7 +310,7 @@ export function mountHud(runner: Runner, recorder: Recorder) {
       modeEl.style.color = mode.allowed ? '' : '#fca5a5';
     } else modeEl.textContent = '';
 
-    drawField(ctx, view, GAME);
+    drawField(ctx, view, GAME, { bg: '#21170f', edge: '#5a4330' });
     let path = t.state === 'running' && t.schedule ? t.schedule.path : null;
     if (!path) {
       const r = store.selected();
@@ -320,7 +336,7 @@ export function mountHud(runner: Runner, recorder: Recorder) {
       ctx.stroke();
     }
     if (recorder.state === 'recording' && recorder.samples.length > 1) {
-      ctx.strokeStyle = '#ef4444';
+      ctx.strokeStyle = '#e0692b';
       ctx.lineWidth = 2;
       ctx.beginPath();
       recorder.samples.forEach((p, i) => {
