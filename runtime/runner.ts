@@ -4,6 +4,11 @@ import { mirrorRoutine, type Routine } from '../shared/routine';
 import { buildSchedule, buttonsAt, referenceAt, type Schedule } from '../shared/schedule';
 import { stickFromVelocity } from '../shared/stick';
 import { AutoWatch, isAutoPhase, readDriverDisplay, readMode, readPose, robotInfo } from './game';
+import { allianceOfX, wrapAngle, type Pose } from '../shared/field';
+import { mirrorRoutine, type Routine } from '../shared/routine';
+import { buildSchedule, buttonsAt, referenceAt, type Schedule } from '../shared/schedule';
+import { stickFromVelocity } from '../shared/stick';
+import { AutoWatch, GAME, driveFrame, isAutoPhase, readMode, readPose, robotInfo } from './game';
 import { isActive, realInputActive, setActive, setButtons, setSticks } from './pad';
 import { store } from './storage';
 
@@ -105,8 +110,8 @@ export class Runner {
       return null;
     }
     const pose = readPose(store.settings().front)!;
-    const alliance = readMode().alliance ?? allianceOfX(pose.x);
-    const drawnFor = routine.waypoints.length ? allianceOfX(routine.waypoints[0].x) : 'blue';
+    const alliance = readMode().alliance ?? allianceOfX(GAME, pose.x);
+    const drawnFor = routine.waypoints.length ? allianceOfX(GAME, routine.waypoints[0].x) : 'blue';
     const r: Routine = drawnFor === alliance ? routine : mirrorRoutine(routine);
     const schedule = buildSchedule(r);
     if (!schedule.path.samples.length) {
@@ -228,6 +233,14 @@ export class Runner {
 
     const s = stickFromVelocity(vx, vy, omega, this.t.alliance, cal);
     setSticks(s.lx, s.ly, s.rx);
+    // FRS's own auto-align is driving (e.g. Reefscape reef poles): let go of the sticks,
+    // since any stick input over 15% would cancel it
+    const assisting = sched.assists.some((w) => el >= w.t0 && el < w.t1);
+    if (assisting) setSticks(0, 0, 0);
+    else {
+      const s = stickFromVelocity(vx, vy, omega, this.t.alliance, settings.cal, driveFrame());
+      setSticks(s.lx, s.ly, s.rx);
+    }
     const pressed = new Set<number>();
     for (const b of buttonsAt(sched, el)) pressed.add(settings.buttonMap[b]);
     setButtons(pressed);
@@ -252,16 +265,16 @@ export class Runner {
     const front = store.settings().front;
     const cal = store.settings().cal;
     const p0 = readPose(front)!;
-    const alliance = allianceOfX(p0.x);
+    const alliance = readMode().alliance ?? allianceOfX(GAME, p0.x);
     // field-frame direction with the most room (walls only; the user should avoid obstacles)
     const room = [
-      { dx: 1, dy: 0, d: FIELD.length - p0.x },
+      { dx: 1, dy: 0, d: GAME.field.length - p0.x },
       { dx: -1, dy: 0, d: p0.x },
-      { dx: 0, dy: 1, d: FIELD.width - p0.y },
+      { dx: 0, dy: 1, d: GAME.field.width - p0.y },
       { dx: 0, dy: -1, d: p0.y },
     ].sort((p, q) => q.d - p.d)[0];
     const LEVEL = 0.6;
-    const toStick = (dx: number, dy: number) => stickFromVelocity(dx, dy, 0, alliance, { maxVel: 1, maxOmega: 1, deadzone: 0 });
+    const toStick = (dx: number, dy: number) => stickFromVelocity(dx, dy, 0, alliance, { maxVel: 1, maxOmega: 1, deadzone: 0 }, driveFrame());
     const dir = toStick(room.dx, room.dy);
     this.set('calibrating', 'Calibrating: driving…');
     setActive(true);

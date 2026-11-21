@@ -1,6 +1,6 @@
 import type { Pose } from './field';
 import { posToS, samplePath, sampleAt, type SampledPath } from './path';
-import { ACTIONS, AUTO_LENGTH, buttonForAction, moveSpeedFraction, type Action, type ButtonId, type Routine } from './routine';
+import { ACTIONS, actionPlan, gameOf, moveSpeedFraction, type Action, type ButtonId, type Routine } from './routine';
 import { duration, profileRange, stateAt, timeAtS, type SpeedZone, type TrajState } from './trajectory';
 
 export type Step =
@@ -26,6 +26,8 @@ export interface Schedule {
   steps: Step[];
   spans: ButtonSpan[];
   timing: Record<string, ActionTiming>;
+  /** windows (absolute seconds) where FRS's auto-align drives and the follower must let go */
+  assists: { t0: number; t1: number; actionId: string }[];
   /** stretches of path driven slowly (shooting on the move) */
   zones: (SpeedZone & { actionId: string })[];
   /** when the last drive/hold step ends */
@@ -38,26 +40,16 @@ export interface Schedule {
 const SAME_SPOT = 0.01; // m: stop actions this close together run back-to-back at one spot
 
 export function buildSchedule(r: Routine): Schedule {
+  const game = gameOf(r);
   const path = samplePath(r.waypoints);
   const warnings: string[] = [];
   const steps: Step[] = [];
   const timing: Record<string, ActionTiming> = {};
-  if (path.samples.length === 0) return { path, steps, spans: [], timing, zones: [], driveEnd: 0, total: 0, warnings: ['Add a starting waypoint.'] };
+  if (path.samples.length === 0) return { path, steps, spans: [], assists: [], timing, zones: [], driveEnd: 0, total: 0, warnings: ['Add a starting waypoint.'] };
 
   const withS = r.actions
-    .map((a, order) => ({ a, order, s: posToS(path, a.at) }))
+    .map((a, order) => ({ a: ACTIONS[a.type].forcedStop && !a.stop ? { ...a, stop: true } : a, order, s: posToS(path, a.at) }))
     .sort((p, q) => p.s - q.s || p.order - q.order);
-
-  // shooting on the move: hold a reduced speed from the action's spot for long enough
-  // to cover its duration at that speed (the robot slows down before reaching the spot)
-  const zones: (SpeedZone & { actionId: string })[] = [];
-  for (const it of withS) {
-    const f = moveSpeedFraction(it.a);
-    if (f === null || f >= 1) continue;
-    const v = Math.max(0.05, f * r.constraints.maxVel);
-    const s1 = Math.min(path.length, it.s + v * Math.max(0.1, it.a.duration));
-    if (s1 - it.s > 0.02) zones.push({ s0: it.s, s1, v, actionId: it.a.id }); // nothing to slow at the very end of the path
-  }
 
   // stop points split the path into legs that each start and end at rest
   const stopSpots: { s: number; actions: Action[] }[] = [];
@@ -66,6 +58,33 @@ export function buildSchedule(r: Routine): Schedule {
     const last = stopSpots[stopSpots.length - 1];
     if (last && Math.abs(last.s - it.s) < SAME_SPOT) last.actions.push(it.a);
     else stopSpots.push({ s: it.s, actions: [it.a] });
+  }
+
+  // shooting on the move: hold a reduced speed from the action's spot until its time is used up.
+  // Time spent parked at stops inside the stretch (e.g. a Wait) counts toward the shot, so the
+  // slow stretch ends where the shot actually ends instead of carrying on after the stop.
+  const zones: (SpeedZone & { actionId: string })[] = [];
+  const stopTime = (spot: { actions: Action[] }) => Math.max(0.05, spot.actions.reduce((sum, a) => sum + Math.max(0, a.duration), 0));
+  for (const it of withS) {
+    const f = moveSpeedFraction(it.a);
+    if (f === null || f >= 1) continue;
+    const v = Math.max(0.05, f * r.constraints.maxVel);
+    let remaining = Math.max(0.1, it.a.duration);
+    let cursor = it.s;
+    let s1 = path.length;
+    for (const spot of stopSpots) {
+      if (spot.s <= it.s + 1e-6) continue; // stops at or before the shot's spot happen before it starts
+      const driveTime = (spot.s - cursor) / v;
+      if (driveTime >= remaining) break;
+      remaining -= driveTime + stopTime(spot);
+      cursor = spot.s;
+      if (remaining <= 0) {
+        s1 = spot.s;
+        break;
+      }
+    }
+    if (remaining > 0) s1 = Math.min(path.length, cursor + v * remaining);
+    if (s1 - it.s > 0.02) zones.push({ s0: it.s, s1, v, actionId: it.a.id }); // nothing to slow at the very end of the path
   }
 
   let t = 0;
@@ -115,6 +134,7 @@ export function buildSchedule(r: Routine): Schedule {
 
   // turn actions into button holds
   const spans: ButtonSpan[] = [];
+  const assists: Schedule['assists'] = [];
   const ordered = [...withS].sort((p, q) => timing[p.a.id].t0 - timing[q.a.id].t0 || p.order - q.order);
   let intakeOn: { t0: number; id: string } | null = null;
   for (const { a } of ordered) {
@@ -126,24 +146,30 @@ export function buildSchedule(r: Routine): Schedule {
     }
     if (a.type === 'intakeOff') {
       if (intakeOn) {
-        spans.push({ button: 'intake', t0: intakeOn.t0, t1: tm.t0, actionId: intakeOn.id });
+        spans.push({ button: game.roles.intake, t0: intakeOn.t0, t1: tm.t0, actionId: intakeOn.id });
         timing[intakeOn.id].t1 = tm.t0;
         intakeOn = null;
       } else warnings.push('"Intake off" with no "Intake on" before it.');
       continue;
     }
-    const b = buttonForAction(a);
-    if (b && ACTIONS[a.type].hasDuration) spans.push({ button: b, t0: tm.t0, t1: tm.t0 + Math.max(0.1, a.duration), actionId: a.id });
+    if (!ACTIONS[a.type].hasDuration) continue;
+    const plan = actionPlan(a, game);
+    for (const p of plan.presses) spans.push({ button: p.button, t0: tm.t0 + p.t0, t1: tm.t0 + p.t1, actionId: a.id });
+    if (plan.assist) assists.push({ t0: tm.t0 + plan.assist[0], t1: tm.t0 + plan.assist[1], actionId: a.id });
   }
-  if (intakeOn) spans.push({ button: 'intake', t0: intakeOn.t0, t1: Infinity, actionId: intakeOn.id });
+  if (intakeOn) spans.push({ button: game.roles.intake, t0: intakeOn.t0, t1: Infinity, actionId: intakeOn.id });
 
   const finite = spans.map((x) => x.t1).filter(Number.isFinite);
   const total = Math.max(driveEnd, ...finite, 0);
-  if (total > AUTO_LENGTH) warnings.push(`Routine takes ${total.toFixed(1)} s but auto is only ${AUTO_LENGTH} s.`);
+  if (total > game.autoLength) warnings.push(`Routine takes ${total.toFixed(1)} s but auto is only ${game.autoLength} s.`);
   for (const a of r.actions) {
     if (a.type === 'wait' && !a.stop) warnings.push('A "Wait" that does not stop the robot does nothing.');
+    if (ACTIONS[a.type].games && !ACTIONS[a.type].games!.includes(game.id)) warnings.push(`"${ACTIONS[a.type].label}" isn't a ${game.name} action.`);
   }
-  return { path, steps, spans, timing, zones, driveEnd, total, warnings };
+  if (game.id === 'crescendo' && r.actions.some((a) => a.type === 'climb')) {
+    warnings.push('Crescendo only lets robots climb in Teleop, so a climb in Auto does nothing.');
+  }
+  return { path, steps, spans, assists, timing, zones, driveEnd, total, warnings };
 }
 
 /** Reference pose at schedule time t (for previews and the follower). */

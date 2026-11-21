@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FIELD, FIELD_ELEMENTS, mirrorPose, simToField, wrapAngle } from './field';
+import { GAMES, gameFromHost, mirrorPose, simToField, wrapAngle, type Shape } from './field';
 import { nearestOnPath, posToS, samplePath, sampleAt } from './path';
 import { applyAutoHandles, makeAction, makeWaypoint, mirrorRoutine, newRoutine, parseRoutine, type Routine } from './routine';
 import { buildSchedule, buttonsAt, referenceAt } from './schedule';
@@ -25,26 +25,46 @@ describe('field', () => {
     expect(wrapAngle(3 * Math.PI)).toBeCloseTo(Math.PI);
     expect(wrapAngle(-Math.PI / 2 - 2 * Math.PI)).toBeCloseTo(-Math.PI / 2);
   });
-  it('mirrors through field center', () => {
-    const m = mirrorPose({ x: 1, y: 2, heading: 0 });
-    expect(m.x).toBeCloseTo(FIELD.length - 1);
-    expect(m.y).toBeCloseTo(FIELD.width - 2);
+  const R = GAMES.rebuilt, E = GAMES.reefscape, K = GAMES.crescendo;
+  const labeled = (g: typeof R, label: string) => g.shapes.filter((x): x is Extract<Shape, { t: 'rect' } | { t: 'poly' }> => (x.t === 'rect' || x.t === 'poly') && x.label === label);
+  const cx = (x: Shape) => (x.t === 'rect' ? (x.x0 + x.x1) / 2 : x.t === 'poly' ? x.pts.reduce((a, p) => a + p[0], 0) / x.pts.length : 0);
+
+  it('rotates Rebuilt/Reefscape and mirrors Crescendo for the red side', () => {
+    const m = mirrorPose(R, { x: 1, y: 2, heading: 0 });
+    expect(m.x).toBeCloseTo(R.field.length - 1);
+    expect(m.y).toBeCloseTo(R.field.width - 2);
     expect(Math.abs(m.heading)).toBeCloseTo(Math.PI);
+    const c = mirrorPose(K, { x: 1, y: 2, heading: 0.3 });
+    expect(c.x).toBeCloseTo(K.field.length - 1);
+    expect(c.y).toBeCloseTo(2); // Crescendo is mirrored left-right: same y
+    expect(c.heading).toBeCloseTo(Math.PI - 0.3);
   });
-  it('converts sim coordinates (FRS map: blue start at X=-3.8259, Z=-3.5653)', () => {
-    const p = simToField(-3.825875, -3.565337);
+  it('converts sim coordinates (FRS map: Rebuilt blue start at X=-3.8259, Z=-3.5653)', () => {
+    const p = simToField(R, -3.825875, -3.565337);
     expect(p.x).toBeCloseTo(4.4446, 3);
     expect(p.y).toBeCloseTo(7.6, 3);
   });
-  it('matches the FRS field map (16.541 x 8.069 m, 1.194 m hub)', () => {
-    expect(FIELD.length).toBeCloseTo(16.541, 3);
-    expect(FIELD.width).toBeCloseTo(8.069, 3);
-    const hub = FIELD_ELEMENTS.find((e) => e.name === 'Blue hub')!;
-    expect(hub.x1 - hub.x0).toBeCloseTo(1.194, 3);
-    expect((hub.y0 + hub.y1) / 2).toBeCloseTo(FIELD.width / 2, 3);
-    // red is blue rotated about the center
-    const red = FIELD_ELEMENTS.find((e) => e.name === 'Red hub')!;
-    expect(red.x0).toBeCloseTo(FIELD.length - hub.x1, 6);
+  it('matches each FRS field map', () => {
+    expect([R.field.length, R.field.width]).toEqual([16.540988, 8.069326]);
+    expect([E.field.length, E.field.width]).toEqual([17.548, 8.052]);
+    expect([K.field.length, K.field.width]).toEqual([16.541, 8.211]);
+    const hubs = labeled(R, 'HUB');
+    expect(hubs).toHaveLength(2);
+    expect(cx(hubs[0])).toBeCloseTo(4.6256, 3);
+    expect(cx(hubs[1])).toBeCloseTo(R.field.length - 4.6256, 3);
+    // Reefscape reef centers (FRS: 4.285 m either side of center)
+    const reefs = labeled(E, 'REEF');
+    expect(reefs.map(cx).sort((a, b) => a - b).map((v) => +v.toFixed(3))).toEqual([4.489, 13.059]);
+    // Crescendo speakers are on the same side of the field (mirror symmetry)
+    const sp = labeled(K, 'SPEAKER');
+    expect(sp).toHaveLength(2);
+    if (sp[0].t === 'rect' && sp[1].t === 'rect') expect((sp[0].y0 + sp[0].y1) / 2).toBeCloseTo((sp[1].y0 + sp[1].y1) / 2, 6);
+  });
+  it('detects the game from the page host', () => {
+    expect(gameFromHost('rebuilt.frsim.com')).toBe('rebuilt');
+    expect(gameFromHost('reefscape.frsim.com')).toBe('reefscape');
+    expect(gameFromHost('crescendo.frsim.com')).toBe('crescendo');
+    expect(gameFromHost('example.com')).toBe(null);
   });
 });
 
@@ -166,6 +186,22 @@ describe('schedule', () => {
     // stopping shots get no zone
     expect(buildSchedule({ ...r, actions: [{ ...shoot, stop: true }] }).zones).toHaveLength(0);
   });
+  it('a stop inside a moving shot uses up shot time (no extra slow driving afterwards)', () => {
+    const r = straight(10);
+    const shoot = { ...makeAction('shoot', { seg: 0, u: 0.1 }), stop: false, duration: 3, speedPct: 25 };
+    const wait = { ...makeAction('wait', { seg: 0, u: 0.2 }), duration: 1.5 };
+    r.actions = [shoot, wait];
+    const s = buildSchedule(r);
+    const v = C.maxVel * 0.25;
+    const z = s.zones[0];
+    // drive (0.2-0.1)*10 = 1 m slowly (1.33 s), park 1.5 s, leaving ~0.17 s => ~0.13 m past the wait
+    const drive1 = 1 / v;
+    expect(z.s1 - z.s0).toBeCloseTo(1 + v * (3 - drive1 - 1.5), 2);
+    // and once the shot's time is over, the robot is no longer held slow
+    const shotEnd = s.timing[shoot.id].t1;
+    const later = referenceAt(s, shotEnd + 1.0);
+    expect(Math.hypot(later.vx, later.vy)).toBeGreaterThan(v * 1.5);
+  });
   it('warns when over 20 s', () => {
     const r = straight(2);
     r.actions = [{ ...makeAction('wait', { seg: 0, u: 1 }), duration: 25 }];
@@ -207,6 +243,14 @@ describe('stick mapping', () => {
     expect(r.lx).toBeGreaterThan(0);
     expect(b.rx).toBeLessThan(0); // CCW = stick left
     expect(r.rx).toBeCloseTo(b.rx);
+  });
+  it('inverts Crescendo first-person (robot-relative) driving', () => {
+    // measured in FRS: yaw -2.057 with intake on the back (lead = yaw + π): stick up moved (0.884, 0.468) in scene X,Z
+    const lead = -2.0568 + Math.PI;
+    // ask for that same direction in field terms: scene (0.884, 0.468) = field (0.884, -0.468)
+    const s = stickFromVelocity(0.884 * 2, -0.468 * 2, 0, 'blue', cal, { kind: 'robot', leadYaw: lead });
+    expect(s.ly).toBeLessThan(-0.3); // stick pushed up
+    expect(Math.abs(s.lx)).toBeLessThan(0.02);
   });
   it('clamps to the unit circle', () => {
     const s = stickFromVelocity(10, 10, 100, 'blue', cal);
@@ -271,5 +315,58 @@ describe('recording -> routine', () => {
   it('rejects an empty recording', async () => {
     const { recordingToRoutine } = await import('./recording');
     expect(() => recordingToRoutine([])).toThrow(/too short/);
+  });
+});
+
+describe('game-specific scoring actions', () => {
+  const mk = (game: 'reefscape' | 'crescendo') => ({ ...straight(4), game });
+
+  it('offers each game its own actions', async () => {
+    const { actionTypesFor } = await import('./routine');
+    const { GAMES: G } = await import('./field');
+    expect(actionTypesFor(G.reefscape)).toEqual(expect.arrayContaining(['coral', 'algaeReef', 'net', 'processor']));
+    expect(actionTypesFor(G.reefscape)).not.toContain('amp');
+    expect(actionTypesFor(G.crescendo)).toContain('amp');
+    expect(actionTypesFor(G.crescendo)).not.toContain('coral');
+    expect(actionTypesFor(G.rebuilt)).not.toContain('coral');
+  });
+
+  it('Reefscape coral: holds level + pole, scores, and lets FRS auto-align', async () => {
+    const { GAMES: G } = await import('./field');
+    const r = mk('reefscape');
+    const a = { ...makeAction('coral', { seg: 0, u: 0.5 }, G.reefscape), level: 3, side: 'right' as const, stop: false };
+    r.actions = [a];
+    const s = buildSchedule(r);
+    // forced to stop even though stop=false was saved
+    expect(s.steps.map((x) => x.kind)).toEqual(['drive', 'hold', 'drive']);
+    const t0 = s.timing[a.id].t0;
+    expect(buttonsAt(s, t0 + 0.2)).toEqual(new Set(['l3', 'rightPole']));
+    expect(buttonsAt(s, t0 + a.duration - 0.8)).toEqual(new Set(['l3', 'rightPole', 'score']));
+    expect(s.assists).toEqual([{ t0, t1: t0 + a.duration, actionId: a.id }]);
+  });
+
+  it('Reefscape algae from the reef, net and processor use the right buttons', async () => {
+    const { GAMES: G } = await import('./field');
+    const r = mk('reefscape');
+    const grab = { ...makeAction('algaeReef', { seg: 0, u: 0.2 }, G.reefscape), level: 3 };
+    const net = makeAction('net', { seg: 0, u: 0.5 }, G.reefscape);
+    const proc = makeAction('processor', { seg: 0, u: 0.9 }, G.reefscape);
+    r.actions = [grab, net, proc];
+    const s = buildSchedule(r);
+    const used = (id: string) => new Set(s.spans.filter((x) => x.actionId === id).map((x) => x.button));
+    expect(used(grab.id)).toEqual(new Set(['l3', 'leftPole', 'intake']));
+    expect(used(net.id)).toEqual(new Set(['l4', 'leftPole', 'score']));
+    expect(used(proc.id)).toEqual(new Set(['l1', 'score']));
+    expect(s.assists.map((x) => x.actionId)).toEqual([grab.id, net.id]); // processor has no auto-align
+  });
+
+  it('Crescendo: amp presses Amp, and a climb in Auto gets a warning', async () => {
+    const { GAMES: G } = await import('./field');
+    const r = mk('crescendo');
+    const amp = makeAction('amp', { seg: 0, u: 1 }, G.crescendo);
+    r.actions = [amp, makeAction('climb', { seg: 0, u: 0.5 }, G.crescendo)];
+    const s = buildSchedule(r);
+    expect(s.spans.find((x) => x.actionId === amp.id)?.button).toBe('amp');
+    expect(s.warnings.join()).toMatch(/only lets robots climb in Teleop/);
   });
 });

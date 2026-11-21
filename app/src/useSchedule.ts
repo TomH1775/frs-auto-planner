@@ -1,10 +1,15 @@
 import { useMemo } from 'react';
 import { buildSchedule, type Schedule } from '../../shared/schedule';
 import { useStore } from './store';
-import type { Routine } from '../../shared/routine';
+import { gameOf, type Routine } from '../../shared/routine';
+import type { GameDef } from '../../shared/field';
 
 export function useRoutine(): Routine {
   return useStore((s) => s.routines.find((r) => r.id === s.currentId) ?? s.routines[0]);
+}
+
+export function useGame(): GameDef {
+  return gameOf(useRoutine());
 }
 
 export function useSchedule(): Schedule {

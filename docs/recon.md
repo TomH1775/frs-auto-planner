@@ -67,3 +67,41 @@ The phase label is a leaf `<span>` in the scoreboard. Its text goes:
   KeyE → intake in, KeyZ → hood up. Controller buttons go through the panel's pad mapping.
 - FRS allows only one active match across tabs ("Match in another tab"), so test in a browser profile
   that isn't playing.
+
+## Reefscape and Crescendo (added 2026-11-20)
+Same stack (Next.js + Turbopack + Three r186, same module-cache trick). Differences from Rebuilt:
+
+| | Reefscape (reefscape.frsim.com) | Crescendo (crescendo.frsim.com) |
+|---|---|---|
+| Field (FRS map) | 17.548 × 8.052, rotational symmetry | 16.541 × 8.211, **mirror** symmetry |
+| Auto | 15 s, label `Autonomous` | 15 s, label `Auto` (countdown `Get ready`) |
+| Scene | objects are **unnamed**, so no scene lookup | unnamed |
+| Our pose | network view `view.robots.find(r => r.local)` → `{x, z, yaw}` (populated in singleplayer too) | exported `{position, yaw, shooterDir, ready}` object |
+| Yaw | front = `(sin yaw, cos yaw)` in scene (X, Z), so field heading = yaw − π/2; side offsets: front 0, back π, right π/2, left −π/2 | same |
+| Drive | field-relative, driver perspective (same as Rebuilt) | field-relative in third-person/station cameras; **robot-relative in `firstPerson`**: scene velocity = moveY·(sin e, cos e) + moveX·(−cos e, sin e), with e = yaw + offset[intake.side] |
+| Stores | game store `{screen, matchId, alliance, team, ...}`; net store `{status, room, myId, ranked, event, ...}` | game store `{phase, alliance, teamNumber, cameraMode, online, ...}`; net store `{status, room, myId, watching, ...}`; no Ranked |
+
+Default pad mappings (standard indices):
+- Reefscape: Intake LT 6, Score RT 7, Climb L-stick 10, Setpoints 1–4 = A0 B1 X2 Y3, Left/Right pole LB4/RB5, Coral/algae D-down 13, Intake mode D-right 15.
+- Crescendo: Intake LT 6, Shoot RT 7, Amp RB 5, Outtake LB 4, Climb L-stick 10.
+
+FRS also contains a hidden built-in auto runner (PathPlanner-like projects with named commands for
+real teams' bots), switched off by a feature flag that always returns false. It isn't used here.
+
+## Scoring (tested in FRS, 2026-11-20)
+**Reefscape** (team 2056):
+- The setpoint buttons set `input.level` (1–4) while held. What a level means depends on what the robot holds (`readSetpoint`).
+  Holding algae: L4 = net, L1 = processor. Otherwise, with an algae-capable intake, L2/L3 = take algae off the reef; else coral at that level.
+- Pole buttons set `input.align` (−1 left / +1 right). Holding one **auto-aligns** (`startAlign`): it drives to a reef pole for coral
+  (≤ 8 m away), to the reef-face algae, or to the net/processor spot. It times out after 5 s, and stick input over 0.15 cancels it.
+  With algae held, the net wins whenever it's closer than the reef, so processor auto-align is rare.
+- Tested: L4 + left pole + Score from the start spot → aligned to (5.35, 2.86), +5 in Teleop / +7 in Auto. L2/L3 + pole + Intake → algae.
+  Algae + L4 + pole + Score → net +4. Leave in Auto +3.
+- Through the runtime: a path to (6.1, 2.4) + "Score coral L4 left" scored in Auto (Blue 10 = leave + L4).
+
+**Crescendo** (team 254: intake back, shooter front, amp back):
+- Shoot (RT) auto-aims at the speaker. Past `shooter.maxRange` it passes to the wing. +5 Auto / +2 Teleop. Shooting doesn't rotate the robot.
+- Amp (RB) needs `nearAmp` and `ampFacing` (the amp side within about 40° of the wall normal). +1 Teleop.
+- Climb (L-stick press) only works in **Teleop** near a chain (`phase === "teleop"`). One tap goes climbing → onstage, +3.
+  The trap scores automatically when a trap-capable robot finishes climbing with a note.
+- The intake only grabs a note when the intake side faces it.

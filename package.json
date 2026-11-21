@@ -6,7 +6,7 @@
   "scripts": {
     "build:runtime": "vite build --config vite.runtime.config.ts",
     "dev": "npm run build:runtime && vite",
-    "build": "npm run build:runtime && tsc --noEmit && vite build",
+    "build": "npm run build:runtime && tsc --noEmit && vite build && cp runtime-dist/frs-auto-runtime.js dist/frs-auto-runtime.js",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

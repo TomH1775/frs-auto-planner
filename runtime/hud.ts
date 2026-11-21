@@ -1,13 +1,16 @@
 import { plannerRobot } from '../shared/robots';
 import { drawField, drawPathLine, drawRobot, fitView, toCanvas } from '../shared/draw';
-import { mirrorRoutine, parseRoutine, BUTTONS, BUTTON_IDS, type Routine } from '../shared/routine';
+import { buttonIds, gameOf, mirrorRoutine, parseRoutine, type Routine } from '../shared/routine';
 import { samplePath } from '../shared/path';
 import { allianceOfX } from '../shared/field';
 import type { Runner } from './runner';
 import type { Recorder } from './recorder';
 import { store } from './storage';
 import { readDriverDisplay, readMode, readPhase } from './game';
+import { syncFromPlanner } from './sync';
+import { GAME, readMode, readPhase, robotInfo } from './game';
 
+// Fall theme to match FRS's Thanksgiving look: warm browns, cream text, gold accents.
 const CSS = `
 :host { all: initial; }
 .box { position: fixed; top: 64px; left: 12px; z-index: 2147483647; width: 300px; background: rgba(15,17,23,0.94);
@@ -23,20 +26,47 @@ const CSS = `
   scrollbar-width: thin; scrollbar-color: #475569 transparent; }
 .st { padding: 6px 8px; border-radius: 6px; background: #111827; border: 1px solid #1f2937; min-height: 18px; }
 .st.running { border-color: #22c55e; } .st.recording { border-color: #ef4444; } .st.rec-armed { border-color: #f87171; } .st.armed { border-color: #facc15; } .st.calibrating { border-color: #06b6d4; }
+:host { all: initial;
+  --bg: rgba(27,19,14,0.96); --card: #231912; --card-2: #2b1f16; --line: #3b2c20; --line-2: #4a3727;
+  --text: #f5ede3; --muted: #b8a796; --gold: #f2b950; --gold-2: #f7c96b; --gold-ink: #2a1a0a;
+  --ember: #e0692b; --leaf: #c2581f; --danger: #8f2a1c; --danger-line: #b23a24; }
+.box { position: fixed; top: 64px; left: 12px; z-index: 2147483647; width: 300px; background: var(--bg);
+  display: flex; flex-direction: column; max-height: calc(100vh - 76px);
+  color: var(--text); font: 12px/1.4 system-ui, -apple-system, sans-serif; border: 1px solid var(--line-2); border-radius: 12px;
+  box-shadow: 0 10px 34px rgba(0,0,0,0.55), inset 0 1px 0 rgba(242,185,80,0.06); user-select: none; overflow: hidden; }
+.hd { position: relative; flex: none; display: flex; align-items: center; gap: 6px; padding: 9px 10px 9px 30px; cursor: move;
+  border-bottom: 1px solid var(--line); background: linear-gradient(180deg, rgba(242,185,80,0.07), transparent); }
+.hd .leaf { position: absolute; left: 8px; top: 50%; width: 16px; height: 16px; margin-top: -8px; color: var(--leaf); transform: rotate(-18deg); }
+.hd b { font-size: 13px; letter-spacing: .4px; color: var(--gold); }
+.hd .sp { flex: 1; }
+.ic { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 4px; }
+.ic:hover { color: var(--gold-2); }
+.bd { padding: 9px 10px 11px; display: grid; gap: 8px; overflow-y: auto; min-height: 0; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+.st { padding: 7px 9px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); min-height: 18px; }
+.st.running { border-color: #6fbf73; } .st.recording { border-color: var(--ember); } .st.rec-armed { border-color: #e8955e; }
+.st.armed { border-color: var(--gold); box-shadow: 0 0 0 1px rgba(242,185,80,0.25); } .st.calibrating { border-color: #d9a441; }
 .row { display: flex; gap: 6px; align-items: center; }
-select, input, textarea { background: #0b0d12; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 4px 6px; font: inherit; }
+select, input, textarea { background: #1a120d; color: var(--text); border: 1px solid var(--line-2); border-radius: 7px; padding: 4px 6px; font: inherit; }
+select:focus, input:focus, textarea:focus { outline: none; border-color: var(--gold); }
 select { flex: 1; min-width: 0; }
 textarea { width: 100%; box-sizing: border-box; height: 70px; resize: vertical; font-family: ui-monospace, monospace; font-size: 11px; }
-button.b { flex: 1; background: #1f2937; color: #e5e7eb; border: 1px solid #374151; border-radius: 6px; padding: 6px 4px; cursor: pointer; font: 600 12px system-ui, sans-serif; }
-button.b:hover { background: #273244; }
-button.go { background: #facc15; color: #111; border-color: #facc15; }
-button.go:hover { background: #fde047; }
-button.stop { background: #7f1d1d; border-color: #991b1b; }
-button.rec { background: #3a1414; border-color: #7f1d1d; color: #fecaca; }
-button.rec:hover { background: #4a1a1a; }
-.recres { padding: 6px 8px; border-radius: 6px; background: #111827; border: 1px solid #1f2937; display: grid; gap: 6px; }
-canvas { width: 100%; border-radius: 6px; display: block; }
-details summary { cursor: pointer; color: #94a3b8; }
+input[type='checkbox'] { accent-color: var(--gold); }
+button.b { flex: 1; background: var(--card-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 4px; cursor: pointer;
+  font: 700 12px system-ui, sans-serif; letter-spacing: .2px; }
+button.b:hover { background: #33251a; border-color: #5a4330; }
+button.go { background: var(--gold); color: var(--gold-ink); border-color: var(--gold); flex: 1.45; white-space: nowrap; }
+button.go:hover { background: var(--gold-2); border-color: var(--gold-2); }
+button.stop { background: var(--danger); border-color: var(--danger-line); color: #fde6dc; }
+button.stop:hover { background: #a3321f; }
+button.rec { background: #3a1d12; border-color: #7a3a1d; color: #ffd8c2; }
+button.rec:hover { background: #4a2516; }
+button.sync { flex: none; padding: 5px 8px; }
+.recres { padding: 7px 9px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); display: grid; gap: 6px; }
+canvas { width: 100%; border-radius: 8px; display: block; border: 1px solid var(--line); box-sizing: border-box; }
+details summary { cursor: pointer; color: var(--muted); }
+details summary:hover { color: var(--gold-2); }
+details[open] summary { color: var(--gold); }
 details .grid { display: grid; grid-template-columns: 1fr 70px; gap: 4px 8px; margin-top: 6px; align-items: center; }
 details input { width: 100%; box-sizing: border-box; }
 .muted { color: #94a3b8; font-size: 11px; }
@@ -50,7 +80,12 @@ details input { width: 100%; box-sizing: border-box; }
   font: 700 24px/1.25 system-ui, sans-serif; font-variant-numeric: tabular-nums;
   touch-action: none; user-select: none; pointer-events: auto; cursor: grab; }
 [data-hopper]:active { cursor: grabbing; }
+.muted { color: var(--muted); font-size: 11px; }
+.min .bd { display: none; }
 `;
+
+// maple leaf, like the one by FRS's logo
+const LEAF = `<svg class="leaf" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.5l1.9 4.1 2.4-1.2-.6 4.4 3.6-2.5.3 2.3 3.1-.6-1.7 3.6 1.9 1-4.9 4 .7 2-5-1-.3 4.9h-1.6l-.3-4.9-5 1 .7-2-4.9-4 1.9-1L1.3 8l3.1.6.3-2.3 3.6 2.5-.6-4.4 2.4 1.2z"/></svg>`;
 
 export function mountHud(runner: Runner, recorder: Recorder) {
   document.getElementById('frs-auto-hud')?.remove();
@@ -59,13 +94,14 @@ export function mountHud(runner: Runner, recorder: Recorder) {
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${CSS}</style>
   <div class="box">
-    <div class="hd"><b>FRS AUTO</b><span class="muted" data-phase></span><span class="sp"></span>
+    <div class="hd">${LEAF}<b>FRS AUTO</b><span class="muted">${GAME.name}</span><span class="muted" data-phase></span><span class="sp"></span>
       <button class="ic" data-min title="Minimize">–</button><button class="ic" data-close title="Close">×</button></div>
     <div class="bd">
       <div class="st" data-status></div>
       <div class="muted" data-mode></div>
       <div data-driver hidden><strong data-robot></strong><div class="muted" data-team></div></div>
       <div class="row"><select data-routines></select><button class="ic" data-rename>Rename</button><button class="ic" data-del title="Delete routine">🗑</button></div>
+      <div class="row"><select data-routines></select><button class="b sync" data-sync title="Get your latest autos from the planner website">↻ Sync</button><button class="ic" data-del title="Delete routine">🗑</button></div>
       <canvas data-map width="560" height="280"></canvas>
       <div class="row">
         <button class="b go" data-arm title="Start automatically when Auto begins">Arm for Auto</button>
@@ -109,9 +145,9 @@ export function mountHud(runner: Runner, recorder: Recorder) {
           <span>Stick deadzone</span><input data-cal="deadzone" type="number" step="0.01">
           <span>Position gain</span><input data-gain="kP" type="number" step="0.1">
           <span>Heading gain</span><input data-gain="kTheta" type="number" step="0.1">
-          <span>Robot front axis</span><select data-front><option>-x</option><option>+x</option><option>-z</option><option>+z</option></select>
+          <span>Robot front axis</span><select data-front>${(GAME.id === 'rebuilt' ? ['-x', '+x', '-z', '+z'] : ['front', 'back', 'left', 'right']).map((o) => `<option>${o}</option>`).join('')}</select>
           <span>Re-arm after each auto</span><input data-rearm type="checkbox">
-          ${BUTTON_IDS.map((b) => `<span>${BUTTONS[b].label} (pad #)</span><input data-btn="${b}" type="number" min="0" max="16">`).join('')}
+          ${buttonIds(GAME).map((b) => `<span>${GAME.buttons[b].label} (pad #)</span><input data-btn="${b}" type="number" min="0" max="16">`).join('')}
         </div>
         <div class="muted" style="margin-top:6px">Esc, any key, or a real controller hands control back to you instantly.</div>
       </details>
@@ -272,7 +308,7 @@ export function mountHud(runner: Runner, recorder: Recorder) {
     const cur = store.selected();
     sel.innerHTML = store.routines().length
       ? store.routines().map((r) => `<option value="${r.id}" ${cur?.id === r.id ? 'selected' : ''}>${escapeHtml(r.name)}</option>`).join('')
-      : '<option>(no routines: load one below)</option>';
+      : '<option>(no autos yet: click ↻ Sync)</option>';
     cachedPath = null;
   };
   const rename = (routine: Routine | null) => {
@@ -294,6 +330,19 @@ export function mountHud(runner: Runner, recorder: Recorder) {
   sel.addEventListener('change', () => {
     store.select(sel.value);
     cachedPath = null;
+  });
+  $('[data-sync]').addEventListener('click', () => {
+    const setMsg = (m: string) => {
+      runner.t.message = m;
+      runner.onChange();
+    };
+    setMsg('Syncing with the planner…');
+    syncFromPlanner((list) => store.upsertMany(list))
+      .then((n) => {
+        refreshRoutines();
+        setMsg(n ? `Synced ${n} ${GAME.name} auto${n === 1 ? '' : 's'} from the planner.` : `Synced, but the planner has no ${GAME.name} autos yet.`);
+      })
+      .catch((e: Error) => setMsg(e.message));
   });
   $('[data-del]').addEventListener('click', () => {
     const r = store.selected();
@@ -404,7 +453,7 @@ export function mountHud(runner: Runner, recorder: Recorder) {
 
   // minimap
   let cachedPath: { id: string; alliance: string; path: ReturnType<typeof samplePath> } | null = null;
-  const view = fitView(map.width, map.height, 8);
+  const view = fitView(map.width, map.height, 8, GAME);
   function render() {
     const t = runner.t;
     if (owner === 'recorder') {
@@ -456,13 +505,14 @@ export function mountHud(runner: Runner, recorder: Recorder) {
     }
 
     drawField(ctx, view);
+    drawField(ctx, view, GAME, { bg: '#21170f', edge: '#5a4330' });
     let path = t.state === 'running' && t.schedule ? t.schedule.path : null;
     if (!path) {
       const r = store.selected();
       if (r) {
-        const al = t.pose ? allianceOfX(t.pose.x) : 'blue';
+        const al = t.pose ? allianceOfX(GAME, t.pose.x) : 'blue';
         if (!cachedPath || cachedPath.id !== r.id + r.updatedAt || cachedPath.alliance !== al) {
-          const drawnFor = r.waypoints.length ? allianceOfX(r.waypoints[0].x) : 'blue';
+          const drawnFor = r.waypoints.length ? allianceOfX(GAME, r.waypoints[0].x) : 'blue';
           cachedPath = { id: r.id + r.updatedAt, alliance: al, path: samplePath((drawnFor === al ? r : mirrorRoutine(r)).waypoints) };
         }
         path = cachedPath.path;
@@ -481,7 +531,7 @@ export function mountHud(runner: Runner, recorder: Recorder) {
       ctx.stroke();
     }
     if (recorder.state === 'recording' && recorder.samples.length > 1) {
-      ctx.strokeStyle = '#ef4444';
+      ctx.strokeStyle = '#e0692b';
       ctx.lineWidth = 2;
       ctx.beginPath();
       recorder.samples.forEach((p, i) => {
@@ -492,8 +542,8 @@ export function mountHud(runner: Runner, recorder: Recorder) {
       });
       ctx.stroke();
     }
-    if (t.state === 'running' && t.ref) drawRobot(ctx, view, t.ref, { stroke: '#facc15', fill: 'rgba(250,204,21,0.1)', alpha: 0.8 });
-    if (t.pose) drawRobot(ctx, view, t.pose, { stroke: '#22c55e', fill: 'rgba(34,197,94,0.3)' });
+    if (t.state === 'running' && t.ref) drawRobot(ctx, view, t.ref, { size: GAME.robotSize, stroke: '#facc15', fill: 'rgba(250,204,21,0.1)', alpha: 0.8 });
+    if (t.pose) drawRobot(ctx, view, t.pose, { size: GAME.robotSize, stroke: '#22c55e', fill: 'rgba(34,197,94,0.3)' });
   }
   refreshRoutines();
   fitWindow();
@@ -540,9 +590,13 @@ export function loadRoutines(input: string | unknown) {
   const data = JSON.parse(text);
   const list: unknown[] = Array.isArray(data) ? data : [data];
   let last: Routine | null = null;
+  let other = 0;
   for (const item of list) {
-    last = parseRoutine(JSON.stringify(item));
-    store.upsert(last);
+    const r = parseRoutine(JSON.stringify(item));
+    store.upsert(r);
+    if (gameOf(r).id === GAME.id) last = r;
+    else other++;
   }
   if (last) store.select(last.id);
+  else if (other) throw new Error(`That routine is for a different game, not ${GAME.name}.`);
 }

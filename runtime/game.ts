@@ -1,11 +1,21 @@
 // Hooks into the running FRS page. Everything here is specific to FRS's current build;
 // see docs/recon.md. All functions fail closed (return null / throw a readable Error).
-import { SIM_ORIGIN, type Pose } from '../shared/field';
+import { GAMES, SIDE_OFFSET, gameFromHost, simToField, type GameDef, type Pose } from '../shared/field';
+import type { DriveFrame } from '../shared/stick';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Any = any;
 
-export type FrontAxis = '-x' | '+x' | '-z' | '+z';
+/**
+ * Which way the robot's front points. Rebuilt reads the 3D model, so this is a model axis
+ * ('-x' etc.); Reefscape and Crescendo read FRS's own yaw, so it's a robot side.
+ */
+export type FrontAxis = '-x' | '+x' | '-z' | '+z' | 'front' | 'back' | 'left' | 'right';
+
+/** The game on this page (by host); Rebuilt if it can't tell. */
+export const GAME: GameDef = GAMES[gameFromHost(location.hostname) ?? 'rebuilt'];
+export const DEFAULT_FRONT: FrontAxis = GAME.id === 'rebuilt' ? '-x' : 'front';
+const SCENE_BASED = GAME.id === 'rebuilt';
 
 let three: Any = null;
 let modules: Map<unknown, Any> | null = null;
@@ -135,9 +145,11 @@ function pickMine(found: Any[]): Any {
 // ---------- game state stores (found by shape, since module ids change between builds) ----------
 
 let storesScanAt = 0;
-let netStore: Any = null; // { status, ranked, room, spectating, you, ... }
-let gameStore: Any = null; // { screen, alliance, team, startMatch, ... }
-let netView: Any = null; // { view: { robots }, localId, predicted, ... }
+let netStore: Any = null; // { status, room, ranked?, spectating?/watching?, you?/myId?, ... }
+let gameStore: Any = null; // { alliance, team|teamNumber, matchId, cameraMode?, online?, ... }
+let netView: Any = null; // { view: { robots }, localId, ... }
+let posePublic: Any = null; // Crescendo: { position, yaw, shooterDir, ready }
+let teamDefs: Any[] | null = null; // robot definitions (number, intake.side, ...)
 
 interface TeamProfile {
   number: number;
@@ -152,6 +164,7 @@ let roster: TeamProfile[] | null = null;
 function findStores() {
   if (!modules || performance.now() - storesScanAt < 2000) return;
   if (netStore && gameStore && netView && roster) return;
+  if (netStore && gameStore && netView && (GAME.id !== 'crescendo' || (posePublic && teamDefs))) return;
   storesScanAt = performance.now();
   for (const m of modules.values()) {
     let e: Any;
@@ -178,10 +191,13 @@ function findStores() {
           continue;
         }
         if (!st || typeof st !== 'object') continue;
-        if (!netStore && 'ranked' in st && 'status' in st && 'room' in st && 'spectating' in st) netStore = v;
-        if (!gameStore && 'screen' in st && 'alliance' in st && 'team' in st && typeof st.startMatch === 'function') gameStore = v;
-      } else if (!netView && typeof v === 'object' && 'localId' in v && 'view' in v && 'predicted' in v) {
-        netView = v;
+        if (!netStore && 'room' in st && 'status' in st && ('myId' in st || 'you' in st || 'spectating' in st)) netStore = v;
+        if (!gameStore && 'alliance' in st && ('team' in st || 'teamNumber' in st) && 'matchId' in st) gameStore = v;
+      } else if (Array.isArray(v)) {
+        if (!teamDefs && v.length > 3 && v.every((t: Any) => t && typeof t.number === 'number' && t.intake)) teamDefs = v;
+      } else if (typeof v === 'object') {
+        if (!netView && 'localId' in v && 'view' in v) netView = v;
+        if (!posePublic && 'position' in v && 'yaw' in v && 'shooterDir' in v && 'ready' in v) posePublic = v;
       }
     }
   }
@@ -229,24 +245,28 @@ export function readMode(): ModeInfo {
   const game = gameState();
   const al = game?.alliance === 'blue' || game?.alliance === 'red' ? game.alliance : null;
   if (!net) {
-    // older build or stores not found: only trust a field with exactly one robot
+    // stores not found: only trust a field with exactly one robot (Rebuilt) / an offline match
     robotInfo();
-    return robotCount === 1
+    const solo = SCENE_BASED ? robotCount === 1 : game ? game.online === false : false;
+    return solo
       ? { kind: 'singleplayer', allowed: true, reason: '', alliance: al }
-      : { kind: 'unknown', allowed: false, reason: "Couldn't tell what kind of match this is, so FRS Auto is off." , alliance: al };
+      : { kind: 'unknown', allowed: false, reason: "Couldn't tell what kind of match this is, so FRS Auto is off.", alliance: al };
   }
-  if (net.ranked || game?.queuePlay) return { kind: 'ranked', allowed: false, reason: 'Disabled in Ranked.', alliance: al };
-  if (net.spectating) return { kind: 'spectating', allowed: false, reason: "You're spectating.", alliance: al };
-  if (net.status === 'off') return { kind: 'singleplayer', allowed: true, reason: '', alliance: al };
-  if (net.status === 'room') {
-    const room = net.room;
-    if (!room || room.event || room.ranked || room.kind === 'event') return { kind: 'event', allowed: false, reason: 'Disabled in events and tournaments.', alliance: al };
-    const mine = Array.isArray(room.players) ? room.players.find((p: Any) => p.id === net.you) : null;
-    if (mine && mine.alliance === null) return { kind: 'spectating', allowed: false, reason: "You're watching, not driving.", alliance: al };
-    const roomAl = mine?.alliance === 'blue' || mine?.alliance === 'red' ? mine.alliance : al;
-    return { kind: 'multiplayer', allowed: true, reason: '', alliance: roomAl };
+  const room = net.room;
+  if (net.ranked || game?.queuePlay || room?.ranked) return { kind: 'ranked', allowed: false, reason: 'Disabled in Ranked.', alliance: al };
+  if (net.event || room?.event || room?.kind === 'event') return { kind: 'event', allowed: false, reason: 'Disabled in events and tournaments.', alliance: al };
+  if (net.spectating || (net.watching !== undefined && net.watching !== null && net.watching !== false)) {
+    return { kind: 'spectating', allowed: false, reason: "You're spectating.", alliance: al };
   }
-  return { kind: 'unknown', allowed: false, reason: `Unsupported mode ("${String(net.status)}").`, alliance: al };
+  if (!room) {
+    if (game?.online === true) return { kind: 'unknown', allowed: false, reason: "Couldn't tell what kind of match this is, so FRS Auto is off.", alliance: al };
+    return { kind: 'singleplayer', allowed: true, reason: '', alliance: al };
+  }
+  const me = net.you ?? net.myId;
+  const mine = Array.isArray(room.players) ? room.players.find((p: Any) => p.id === me) : null;
+  if (mine && mine.alliance === null) return { kind: 'spectating', allowed: false, reason: "You're watching, not driving.", alliance: al };
+  const roomAl = mine?.alliance === 'blue' || mine?.alliance === 'red' ? mine.alliance : al;
+  return { kind: 'multiplayer', allowed: true, reason: '', alliance: roomAl };
 }
 
 function attachedToScene(o: Any): boolean {
@@ -257,12 +277,19 @@ function attachedToScene(o: Any): boolean {
 
 /** Is a match on screen right now? */
 export function inMatch(): boolean {
+  if (!SCENE_BASED) return readPhase() !== null && statePose() !== null;
   if (!hook.scene) return false;
   // Rendering pauses when the window is hidden, so also accept "scoreboard is on screen".
   return performance.now() - hook.seenAt < 1000 || readPhase() !== null;
 }
 
 export function robotInfo(): { count: number; name: string | null } {
+  if (!SCENE_BASED) {
+    const v = netView?.view;
+    const n = v && Array.isArray(v.robots) ? v.robots.length : statePose() ? 1 : 0;
+    const team = gameState()?.team ?? gameState()?.teamNumber;
+    return { count: n, name: statePose() ? `robot:${team ?? '?'}` : null };
+  }
   // re-checked periodically: in multiplayer, which robot is ours comes from the network view
   if (!robot || !attachedToScene(robot) || performance.now() - robotScanAt > 2000) scanRobots();
   return { count: robotCount, name: robot ? robot.name : null };
@@ -289,11 +316,30 @@ export function readDriverDisplay(kind: 'singleplayer' | 'multiplayer') {
     driveRates,
     balls: Number.isSafeInteger(fuel) && fuel >= 0 ? fuel as number : null,
   };
+/** Reefscape / Crescendo: FRS's own record of our robot, in scene coords + yaw (front = (sin yaw, cos yaw)). */
+function statePose(): { X: number; Z: number; yaw: number } | null {
+  findStores();
+  if (GAME.id === 'crescendo') {
+    const p = posePublic;
+    if (!p || !p.ready || !p.position) return null;
+    return { X: p.position.x, Z: p.position.z, yaw: p.yaw };
+  }
+  const v = netView?.view;
+  if (!v || !Array.isArray(v.robots)) return null;
+  const me = v.robots.find((r: Any) => r.local) ?? v.robots.find((r: Any) => r.id === netView.localId);
+  return me && Number.isFinite(me.x) ? { X: me.x, Z: me.z, yaw: me.yaw } : null;
 }
 
 /** Robot pose in WPILib blue-origin field coordinates, or null if unavailable. */
-export function readPose(front: FrontAxis = '-x'): Pose | null {
+export function readPose(front: FrontAxis = DEFAULT_FRONT): Pose | null {
   if (!inMatch()) return null;
+  if (!SCENE_BASED) {
+    const p = statePose();
+    if (!p) return null;
+    const off = SIDE_OFFSET[front] ?? 0;
+    // side direction in scene = (sin(yaw+off), cos(yaw+off)); field dir = (X, -Z)
+    return { ...simToField(GAME, p.X, p.Z), heading: p.yaw + off - Math.PI / 2 };
+  }
   if (!robot || !attachedToScene(robot) || performance.now() - robotScanAt > 2000) scanRobots();
   if (!robot) return null;
   robot.updateWorldMatrix(true, false);
@@ -302,18 +348,33 @@ export function readPose(front: FrontAxis = '-x'): Pose | null {
   let wx: number, wz: number;
   switch (front) {
     case '+x': wx = m[0]; wz = m[2]; break;
-    case '-x': wx = -m[0]; wz = -m[2]; break;
     case '+z': wx = m[8]; wz = m[10]; break;
     case '-z': wx = -m[8]; wz = -m[10]; break;
+    default: wx = -m[0]; wz = -m[2]; break; // '-x'
   }
-  return { x: m[12] + SIM_ORIGIN.x, y: SIM_ORIGIN.z - m[14], heading: Math.atan2(-wz, wx) };
+  return { ...simToField(GAME, m[12], m[14]), heading: Math.atan2(-wz, wx) };
+}
+
+/**
+ * How the stick moves the robot right now. Only Crescendo's first-person camera is
+ * robot-relative (relative to the robot's intake side); everything else is field-relative.
+ */
+export function driveFrame(): DriveFrame {
+  if (GAME.id !== 'crescendo') return { kind: 'field' };
+  const g = gameState();
+  if (g?.cameraMode !== 'firstPerson') return { kind: 'field' };
+  const p = statePose();
+  if (!p) return { kind: 'field' };
+  const def = teamDefs?.find((t: Any) => t.number === (g.teamNumber ?? g.team));
+  const side = def?.intake?.side ?? 'front';
+  return { kind: 'robot', leadYaw: p.yaw + (SIDE_OFFSET[side] ?? 0) };
 }
 
 let phaseEl: Element | null = null;
 let phaseScanAt = 0;
-const PHASE_RE = /^(Ready|Starting|Auto|Auto scoring|Teleop|End game|Paused|Match over)$|^(Transition|Shift \d|End game) ·/;
+const PHASE_RE = /^(Ready|Get ready|Starting|Auto|Autonomous|Auto scoring|Teleop|Endgame|End game|Paused|Match over)$|^(Transition|Shift \d|End game|Endgame|Teleop) ·/;
 
-/** The scoreboard phase label: "Auto", "Transition · 0:10", "Shift 2 · 0:20", ... */
+/** The scoreboard phase label: "Auto" / "Autonomous", "Teleop", "Transition · 0:10", ... */
 export function readPhase(): string | null {
   if (!phaseEl || !phaseEl.isConnected || !PHASE_RE.test((phaseEl.textContent || '').trim())) {
     phaseEl = null;
@@ -332,7 +393,7 @@ export function readPhase(): string | null {
   return phaseEl ? (phaseEl.textContent || '').trim() : null;
 }
 
-export const isAutoPhase = (p: string | null) => p === 'Auto';
+export const isAutoPhase = (p: string | null) => p === 'Auto' || p === 'Autonomous';
 
 /** Match clock (seconds remaining in the current period), read from the span next to the phase label. */
 export function readClock(): number | null {

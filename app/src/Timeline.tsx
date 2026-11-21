@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { ACTIONS, AUTO_LENGTH, BUTTONS, type ButtonId } from '../../shared/routine';
+import { ACTIONS, actionTitle, buttonLabel, type ButtonId } from '../../shared/routine';
 import { useStore } from './store';
-import { useRoutine, useSchedule } from './useSchedule';
+import { useGame, useRoutine, useSchedule } from './useSchedule';
 
 export function Timeline() {
   const sched = useSchedule();
   const r = useRoutine();
+  const game = useGame();
+  const AUTO_LENGTH = game.autoLength;
   const previewT = useStore((s) => s.previewT);
   const playing = useStore((s) => s.playing);
   const setPreviewT = useStore((s) => s.setPreviewT);
@@ -15,6 +17,7 @@ export function Timeline() {
 
   const span = Math.max(AUTO_LENGTH, Math.ceil(sched.total + 0.5));
   const pct = (t: number) => `${(Math.min(t, span) / span) * 100}%`;
+  const w2 = (t0: number, t1: number) => `${((Math.min(t1, span) - t0) / span) * 100}%`;
   const w = (t0: number, t1: number) => `${((Math.min(t1, span) - t0) / span) * 100}%`;
 
   // playback
@@ -101,11 +104,16 @@ export function Timeline() {
                   {st.actionIds
                     .map((id) => r.actions.find((a) => a.id === id))
                     .filter(Boolean)
-                    .map((a) => ACTIONS[a!.type].label)
+                    .map((a) => actionTitle(a!, game))
                     .join(' → ')}
                 </div>
               ),
             )}
+            {sched.assists.map((w) => (
+              <div key={'a' + w.actionId} className="blk align" style={{ left: pct(w.t0), width: w2(w.t0, w.t1) }} title="FRS auto-aligns here">
+                align
+              </div>
+            ))}
             {sched.zones.map((z) => {
               const tm = sched.timing[z.actionId];
               if (!tm) return null;
@@ -119,7 +127,7 @@ export function Timeline() {
         </div>
         {buttonsUsed.map((b) => (
           <div className="tl-row" key={b}>
-            <label>{BUTTONS[b].label}</label>
+            <label>{buttonLabel(game, b)}</label>
             <div className="lane">
               {sched.spans
                 .filter((x) => x.button === b)
@@ -135,7 +143,7 @@ export function Timeline() {
                         e.stopPropagation();
                         select({ kind: 'action', id: x.actionId });
                       }}
-                      title={a ? ACTIONS[a.type].label : ''}
+                      title={a ? actionTitle(a, game) : ''}
                     />
                   );
                 })}

@@ -1,6 +1,8 @@
 # FRS Auto Planner
 
-Draw autonomous routines for **FRS 2026 Rebuilt** (rebuilt.frsim.com) and have them actually drive your robot in Auto.
+Draw autonomous routines for all three FRS games, **2026 Rebuilt**, **2025 Reefscape** and **2024 Crescendo** (frsim.com), and have them actually drive your robot in Auto.
+
+Pick the game with the switcher in the planner's top bar. Each game has its own field, Auto length (Rebuilt 20 s, Reefscape and Crescendo 15 s), and buttons (Reefscape's L1–L4 setpoints and poles, Crescendo's amp, and so on, under **Press button**). One bookmark works on every game's site, and the panel shows the autos for the game you're on.
 
 - **Planner app** (`app/`): draw a path on the field, set robot headings, and drop action items on the path: intake on/off, intake for N s, shoot, climb, any button, and wait. A timeline shows when everything happens and warns if the routine runs past the 20 s auto period.
 - **In-game runtime** (`runtime/`): loaded into the FRS tab by a bookmarklet. It reads the robot's position from the game and follows the path closed-loop. It drives through a virtual gamepad (the same input a real controller gives) and presses the mechanism buttons at the right moments.
@@ -24,10 +26,31 @@ npm run dev        # builds the runtime, then serves the app at http://localhost
 2. Open rebuilt.frsim.com, start a **Singleplayer** match or join a **Multiplayer** room, and click the bookmark. The FRS AUTO panel appears.
 3. The panel automatically uses the speed and turn rate of the robot you are driving. To measure them manually, uncheck **Use current robot’s drive calibration** under **Setup & calibration**, move to open space, and click **Calibrate**.
 4. Pick your routine and click **Arm for Auto** before the match starts. The routine runs when Auto begins and the panel re-arms itself for the next match. In Singleplayer you can press **R** to restart and run it again.
+1. In the planner, click **Send to FRS** and drag the **⚡ FRS Auto** button to your bookmarks bar. **You only do this once.** The bookmark is a tiny loader that fetches the newest version from the website every time you click it.
+2. Open the game (rebuilt.frsim.com, reefscape.frsim.com or crescendo.frsim.com), start a **Singleplayer** match or join a **Multiplayer** room, and click the bookmark. The FRS AUTO panel appears.
+3. Click **↻ Sync** in the panel to pull your latest autos from the planner website. A small window opens for a moment and closes itself; if the browser blocks it, allow pop-ups for frsim.com. Sync again after you edit an auto.
+4. The first time in each game: open **Setup & calibration**, drive to open space, and click **Calibrate**.
+5. Pick your routine and click **Arm for Auto** before the match starts. The routine runs when Auto begins and the panel re-arms itself for the next match. In Singleplayer you can press **R** to restart and run it again.
 
-To update a routine without re-dragging the bookmark, click **Copy routine** in the app. Then in the game panel, choose **Load routine**, paste, and click **Load**.
+No internet, or want a frozen copy? Send to FRS also has an **offline bookmark** with the code and your autos built in (it doesn't update itself). **Load routine** (paste JSON) and **Copy console script** still work too.
 
 Taking over: press any key (Esc works) or touch a real controller, and the runtime lets go instantly.
+
+## Scoring actions per game
+
+Each game's palette has the ways that game actually scores (worked out by testing in FRS):
+
+| Game | Action | What it does |
+|---|---|---|
+| All | **Shoot / Score**, **Intake on/off/for**, **Climb**, **Wait**, **Press button** | Generic buttons. Shoot can be done on the move. |
+| Reefscape | **Score coral** (L1–L4, left/right pole) | Holds the level + pole button. FRS **auto-aligns** to the nearest reef pole, then the action scores. Place it near your reef. |
+| Reefscape | **Take reef algae** (L2/L3, pole) | Auto-aligns to the algae on the nearest reef face and runs the intake. |
+| Reefscape | **Algae → net** | With algae held, auto-aligns to the barge and scores in the net. |
+| Reefscape | **Algae → processor** | With algae held, holds L1 and scores. FRS's auto-align always prefers the net, so end your path at the processor facing it. |
+| Crescendo | **Shoot (speaker)** | FRS aims the shot. Out of range, it passes toward your wing instead. |
+| Crescendo | **Score amp** | End your path at the amp with the robot's amp side facing the wall (within about 40°). |
+
+While FRS auto-aligns, FRS Auto lets go of the sticks (any stick input would cancel the align); the timeline shows these as striped **align** blocks. In Crescendo you can only climb in Teleop, and the trap is scored automatically by climbing with a note, so neither works in Auto.
 
 ## Record an auto in FRS
 
@@ -57,7 +80,9 @@ Square action markers stop the robot while they run. Round ones happen while dri
 
 **Shooting on the move:** select a Shoot action and uncheck *Stop the robot while doing this*. The robot automatically slows to a percentage of the routine's max speed for the whole time it shoots (default 50%, adjustable with the slider). The slowed stretch shows as a thick orange band on the path and a striped "slow" block on the timeline.
 
-Coordinates are WPILib-style, in meters, with the origin at the blue wall. Heading 0° faces the red wall. The robot's *front* is its intake side. Routines drawn on one alliance are mirrored automatically when you play the other one.
+Coordinates are WPILib-style, in meters, with the origin at the blue wall. Heading 0° faces the red wall. The robot's *front* is its intake side. Routines drawn on one alliance are moved to the other automatically when you play it. Rebuilt and Reefscape are rotated 180°, and Crescendo is mirrored left-to-right, matching each field.
+
+Crescendo's **first-person** camera drives robot-relative. FRS Auto detects the camera mode and converts automatically.
 
 ## Notes
 

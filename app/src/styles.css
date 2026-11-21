@@ -99,3 +99,18 @@ a { color: #93c5fd; }
 .paste { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
 .paste textarea { min-height: 120px; resize: vertical; background: #0b0d12; color: var(--text); border: 1px solid #2d3546; border-radius: 6px; padding: 8px; font: 11px/1.4 ui-monospace, monospace; }
 button:disabled { opacity: .5; cursor: default; }
+
+.games { display: flex; border: 1px solid #2d3546; border-radius: 8px; overflow: hidden; }
+.games button { border: 0; border-radius: 0; background: transparent; padding: 5px 10px; }
+.games button + button { border-left: 1px solid #2d3546; }
+.games button.on { background: #2a2610; color: var(--accent); font-weight: 700; }
+.games small { color: var(--muted); font-weight: 400; margin-left: 2px; }
+.sync-page { height: 100%; display: grid; place-content: center; gap: 10px; text-align: center; padding: 20px; }
+.sync-page p { margin: 0; font-size: 14px; color: var(--text); }
+.offline summary { cursor: pointer; color: var(--muted); }
+.bookmarklet.alt { background: #1c2230; color: var(--text); border: 1px solid #2d3546; }
+
+.seg { display: flex; gap: 4px; }
+.seg button { flex: 1; padding: 4px 6px; font-size: 12px; }
+.seg button.on { border-color: var(--accent); background: #2a2610; color: var(--accent); }
+.blk.align { background: repeating-linear-gradient(135deg, #f472b699 0 6px, #f472b644 6px 12px); color: #fce7f3; font-weight: 600; top: 11px; bottom: 2px; }
