@@ -143,6 +143,7 @@ export interface Constraints {
 export const DEFAULT_LAT_ACCEL = 15;
 
 export interface Routine {
+  robotId?: number;
   version: 1;
   id: string;
   name: string;

@@ -1,3 +1,4 @@
+import { plannerRobot } from '../shared/robots';
 import { drawField, drawPathLine, drawRobot, fitView, toCanvas } from '../shared/draw';
 import { buttonIds, gameOf, mirrorRoutine, parseRoutine, type Routine } from '../shared/routine';
 import { samplePath } from '../shared/path';
@@ -5,11 +6,26 @@ import { allianceOfX } from '../shared/field';
 import type { Runner } from './runner';
 import type { Recorder } from './recorder';
 import { store } from './storage';
+import { readDriverDisplay, readMode, readPhase } from './game';
 import { syncFromPlanner } from './sync';
 import { GAME, readMode, readPhase, robotInfo } from './game';
 
 // Fall theme to match FRS's Thanksgiving look: warm browns, cream text, gold accents.
 const CSS = `
+:host { all: initial; }
+.box { position: fixed; top: 64px; left: 12px; z-index: 2147483647; width: 300px; background: rgba(15,17,23,0.94);
+  display: flex; flex-direction: column; box-sizing: border-box; max-width: 100vw; max-height: 100vh;
+  color: #e5e7eb; font: 12px/1.4 system-ui, -apple-system, sans-serif; border: 1px solid #334155; border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.5); user-select: none; }
+.hd { touch-action: none; flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 10px; cursor: move; border-bottom: 1px solid #1f2937; }
+.hd b { font-size: 13px; letter-spacing: .3px; color: #facc15; }
+.hd .sp { flex: 1; }
+.ic { background: none; border: 0; color: #94a3b8; cursor: pointer; font-size: 14px; padding: 0 4px; }
+.ic:hover { color: #fff; }
+.bd { padding: 8px 10px 10px; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; flex: 1 1 auto; gap: 8px; overflow-y: auto; min-height: 0; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: #475569 transparent; }
+.st { padding: 6px 8px; border-radius: 6px; background: #111827; border: 1px solid #1f2937; min-height: 18px; }
+.st.running { border-color: #22c55e; } .st.recording { border-color: #ef4444; } .st.rec-armed { border-color: #f87171; } .st.armed { border-color: #facc15; } .st.calibrating { border-color: #06b6d4; }
 :host { all: initial;
   --bg: rgba(27,19,14,0.96); --card: #231912; --card-2: #2b1f16; --line: #3b2c20; --line-2: #4a3727;
   --text: #f5ede3; --muted: #b8a796; --gold: #f2b950; --gold-2: #f7c96b; --gold-ink: #2a1a0a;
@@ -53,6 +69,17 @@ details summary:hover { color: var(--gold-2); }
 details[open] summary { color: var(--gold); }
 details .grid { display: grid; grid-template-columns: 1fr 70px; gap: 4px 8px; margin-top: 6px; align-items: center; }
 details input { width: 100%; box-sizing: border-box; }
+.muted { color: #94a3b8; font-size: 11px; }
+[data-resize] { align-self: flex-end; flex: none; width: 20px; height: 14px; border: 0; padding: 0;
+  background: transparent; color: #94a3b8; cursor: nwse-resize; touch-action: none; line-height: 12px; }
+.min .bd, .min [data-resize] { display: none; }
+.box.min { height: auto !important; }
+.hopper-area { position: fixed; inset: 8px; z-index: 2147483647; pointer-events: none; }
+[data-hopper] { position: absolute; width: max-content; max-width: 100%; box-sizing: border-box;
+  padding: .2em .55em; border-radius: .35em; background: rgba(15,17,23,.94); color: #facc15;
+  font: 700 24px/1.25 system-ui, sans-serif; font-variant-numeric: tabular-nums;
+  touch-action: none; user-select: none; pointer-events: auto; cursor: grab; }
+[data-hopper]:active { cursor: grabbing; }
 .muted { color: var(--muted); font-size: 11px; }
 .min .bd { display: none; }
 `;
@@ -72,6 +99,8 @@ export function mountHud(runner: Runner, recorder: Recorder) {
     <div class="bd">
       <div class="st" data-status></div>
       <div class="muted" data-mode></div>
+      <div data-driver hidden><strong data-robot></strong><div class="muted" data-team></div></div>
+      <div class="row"><select data-routines></select><button class="ic" data-rename>Rename</button><button class="ic" data-del title="Delete routine">🗑</button></div>
       <div class="row"><select data-routines></select><button class="b sync" data-sync title="Get your latest autos from the planner website">↻ Sync</button><button class="ic" data-del title="Delete routine">🗑</button></div>
       <canvas data-map width="560" height="280"></canvas>
       <div class="row">
@@ -79,6 +108,11 @@ export function mountHud(runner: Runner, recorder: Recorder) {
         <button class="b" data-run title="Run right now (practice, any phase)">Run now</button>
         <button class="b stop" data-stop>Stop</button>
       </div>
+      <details><summary>Hopper display</summary>
+        <div class="grid"><label for="hopper-size">Text size</label><input id="hopper-size" type="range" min="12" max="72"></div>
+        <div class="row"><button class="b" data-hopper-center>Move to top center</button></div>
+        <div class="muted">Drag the hopper count to place it anywhere.</div>
+      </details>
       <details data-rec><summary>Record a drive</summary>
         <div class="muted" style="margin-top:6px">Drive the auto yourself. Your path, stops, and button presses (intake, shoot, climb, …) become a routine you can import into the planner.</div>
         <div class="row" style="margin-top:6px">
@@ -88,6 +122,7 @@ export function mountHud(runner: Runner, recorder: Recorder) {
         </div>
         <div class="recres" data-rec-result style="margin-top:6px; display:none">
           <div data-rec-summary></div>
+          <button class="b" data-rec-rename>Rename recording</button>
           <div class="row">
             <button class="b" data-rec-download>Download .json</button>
             <button class="b" data-rec-copy>Copy JSON</button>
@@ -100,6 +135,8 @@ export function mountHud(runner: Runner, recorder: Recorder) {
         <div class="row" style="margin-top:6px"><button class="b" data-paste>Load</button></div>
       </details>
       <details><summary>Setup &amp; calibration</summary>
+        <label class="row"><input style="width:auto" type="checkbox" data-auto-cal>Use current robot’s drive calibration</label>
+        <div class="muted" data-cal-source></div>
         <div class="row" style="margin-top:6px"><button class="b go" data-calibrate>Calibrate (needs ~4 m clear ahead)</button></div>
         <div class="muted" style="margin-top:4px">Drive into open space first, like the middle of the neutral zone.</div>
         <div class="grid">
@@ -115,7 +152,9 @@ export function mountHud(runner: Runner, recorder: Recorder) {
         <div class="muted" style="margin-top:6px">Esc, any key, or a real controller hands control back to you instantly.</div>
       </details>
     </div>
-  </div>`;
+    <button data-resize title="Resize window (drag or use arrow keys)" aria-label="Resize window">◢</button>
+  </div>
+  <div class="hopper-area"><div data-hopper hidden title="Drag to move hopper count"></div></div>`;
   document.body.appendChild(host);
 
   const $ = <T extends Element>(sel: string) => root.querySelector(sel) as T;
@@ -123,6 +162,58 @@ export function mountHud(runner: Runner, recorder: Recorder) {
   const status = $<HTMLDivElement>('[data-status]');
   const phaseEl = $<HTMLSpanElement>('[data-phase]');
   const modeEl = $<HTMLDivElement>('[data-mode]');
+  const driverEl = $<HTMLDivElement>('[data-driver]');
+  const robotEl = $('[data-robot]');
+  const teamEl = $('[data-team]');
+  const hopperEl = $<HTMLDivElement>('[data-hopper]');
+  const hopperArea = $<HTMLDivElement>('.hopper-area');
+  const size = $<HTMLInputElement>('#hopper-size');
+  const layout = { ...store.settings().hopperLayout };
+  const applyLayout = () => {
+    const x = layout.x * 100 + '%';
+    const y = layout.y * 100 + '%';
+    hopperEl.style.left = x;
+    hopperEl.style.top = y;
+    hopperEl.style.transform = `translate(-${x}, -${y})`;
+    hopperEl.style.fontSize = layout.fontSize + 'px';
+  };
+  const saveLayout = () => store.setSettings({ hopperLayout: { ...layout } });
+  size.value = String(layout.fontSize);
+  size.addEventListener('input', () => {
+    layout.fontSize = size.valueAsNumber;
+    applyLayout();
+  });
+  size.addEventListener('change', saveLayout);
+  $('[data-hopper-center]').addEventListener('click', () => {
+    layout.x = 0.5;
+    layout.y = 0;
+    applyLayout();
+    saveLayout();
+  });
+  applyLayout();
+
+  let drag: { id: number; dx: number; dy: number } | null = null;
+  hopperEl.addEventListener('pointerdown', (e) => {
+    if (drag || e.button !== 0) return;
+    e.preventDefault();
+    const rect = hopperEl.getBoundingClientRect();
+    drag = { id: e.pointerId, dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    hopperEl.setPointerCapture(e.pointerId);
+  });
+  hopperEl.addEventListener('pointermove', (e) => {
+    if (!drag || drag.id !== e.pointerId) return;
+    const area = hopperArea.getBoundingClientRect();
+    const rect = hopperEl.getBoundingClientRect();
+    // Store fractions of the available travel so the badge stays visible after resizing.
+    const fraction = (offset: number, travel: number) => Math.max(0, Math.min(1, offset / Math.max(1, travel)));
+    layout.x = fraction(e.clientX - area.left - drag.dx, area.width - rect.width);
+    layout.y = fraction(e.clientY - area.top - drag.dy, area.height - rect.height);
+    applyLayout();
+  });
+  hopperEl.addEventListener('lostpointercapture', () => {
+    drag = null;
+    saveLayout();
+  });
   const recResult = $<HTMLDivElement>('[data-rec-result]');
   const recSummary = $<HTMLDivElement>('[data-rec-summary]');
   // whichever of runner / recorder acted last owns the status line
@@ -143,35 +234,71 @@ export function mountHud(runner: Runner, recorder: Recorder) {
     if (t.matches('button')) t.blur();
   });
 
-  // the panel never runs off the bottom of the window; its body scrolls instead
-  const fitHeight = () => {
-    const top = box.getBoundingClientRect().top;
-    box.style.maxHeight = Math.max(120, window.innerHeight - top - 12) + 'px';
+  const savedSize = store.settings().panelSize;
+  if (savedSize) {
+    box.style.width = savedSize.width + 'px';
+    box.style.height = savedSize.height + 'px';
+  }
+  function place(left: number, top: number) {
+    const rect = box.getBoundingClientRect();
+    box.style.left = Math.max(0, Math.min(left, window.innerWidth - rect.width)) + 'px';
+    box.style.top = Math.max(0, Math.min(top, window.innerHeight - rect.height)) + 'px';
+  }
+  const fitWindow = () => {
+    const rect = box.getBoundingClientRect();
+    place(rect.left, rect.top);
   };
-  window.addEventListener('resize', fitHeight);
+  const panelBounds = new ResizeObserver(() => { if (box.offsetWidth) fitWindow(); });
+  panelBounds.observe(box);
+  window.addEventListener('resize', fitWindow);
 
-  // dragging
   const hd = $<HTMLDivElement>('.hd');
-  hd.addEventListener('pointerdown', (e) => {
-    if ((e.target as HTMLElement).closest('button')) return;
-    const r = box.getBoundingClientRect();
-    const dx = e.clientX - r.left, dy = e.clientY - r.top;
-    const move = (ev: PointerEvent) => {
-      box.style.left = Math.max(0, ev.clientX - dx) + 'px';
-      box.style.top = Math.min(window.innerHeight - 60, Math.max(0, ev.clientY - dy)) + 'px';
-      fitHeight();
-    };
-    const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+  const grip = $<HTMLButtonElement>('[data-resize]');
+  function resizePanel(width: number, height: number) {
+    const { left, top } = box.getBoundingClientRect();
+    box.style.width = Math.min(window.innerWidth - left, Math.max(240, width)) + 'px';
+    box.style.height = Math.min(window.innerHeight - top, Math.max(100, height)) + 'px';
+  }
+  function saveSize() {
+    const { width, height } = box.getBoundingClientRect();
+    store.setSettings({ panelSize: { width, height } });
+  }
+  const dragControls: HTMLElement[] = [hd, grip];
+  for (const control of dragControls) {
+    control.addEventListener('pointerdown', (event: PointerEvent) => {
+      if (event.button !== 0 || !event.isPrimary || (control === hd && (event.target as HTMLElement).closest('button'))) return;
+      const start = box.getBoundingClientRect();
+      control.setPointerCapture(event.pointerId);
+      const move = (ev: PointerEvent) => {
+        if (ev.pointerId !== event.pointerId) return;
+        const dx = ev.clientX - event.clientX;
+        const dy = ev.clientY - event.clientY;
+        if (control === grip) resizePanel(start.width + dx, start.height + dy);
+        else place(start.left + dx, start.top + dy);
+      };
+      const end = (ev: PointerEvent) => {
+        if (ev.pointerId !== event.pointerId) return;
+        control.removeEventListener('pointermove', move);
+        control.removeEventListener('lostpointercapture', end);
+        if (control === grip && box.style.height) saveSize();
+      };
+      control.addEventListener('pointermove', move);
+      control.addEventListener('lostpointercapture', end);
+    });
+  }
+  grip.addEventListener('keydown', (ev) => {
+    const steps: Record<string, [number, number]> = { ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] };
+    const step = steps[ev.key];
+    if (!step) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    resizePanel(box.offsetWidth + step[0], box.offsetHeight + step[1]);
+    saveSize();
   });
 
   root.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
 
-  $('[data-min]').addEventListener('click', () => box.classList.toggle('min'));
+  $('[data-min]').addEventListener('click', () => { box.classList.toggle('min'); fitWindow(); });
   $('[data-close]').addEventListener('click', () => {
     runner.stop('Closed.');
     host.style.display = 'none';
@@ -184,6 +311,22 @@ export function mountHud(runner: Runner, recorder: Recorder) {
       : '<option>(no autos yet: click ↻ Sync)</option>';
     cachedPath = null;
   };
+  const rename = (routine: Routine | null) => {
+    if (!routine) return;
+    const name = window.prompt('Auto name', routine.name)?.trim();
+    if (!name || name === routine.name) return;
+    const updatedAt = Date.now();
+    store.rename(routine.id, name, updatedAt);
+    if (recorder.result?.id === routine.id) {
+      recorder.result = { ...recorder.result, name, updatedAt };
+      recorder.saveResult();
+      recorder.message = `Renamed recording to "${name}".`;
+      recorder.onChange();
+    }
+    refreshRoutines();
+  };
+  $('[data-rename]').addEventListener('click', () => rename(store.selected()));
+  $('[data-rec-rename]').addEventListener('click', () => rename(recorder.result));
   sel.addEventListener('change', () => {
     store.select(sel.value);
     cachedPath = null;
@@ -267,7 +410,17 @@ export function mountHud(runner: Runner, recorder: Recorder) {
 
   // settings inputs
   const s0 = store.settings();
-  root.querySelectorAll<HTMLInputElement>('[data-cal]').forEach((inp) => {
+  const autoCal = $<HTMLInputElement>('[data-auto-cal]');
+  const calSource = $('[data-cal-source]');
+  const measureButton = $<HTMLButtonElement>('[data-calibrate]');
+  autoCal.checked = s0.autoCalibrate;
+  autoCal.addEventListener('change', () => {
+    if (runner.t.state === 'calibrating') runner.stop();
+    store.setSettings({ autoCalibrate: autoCal.checked });
+    render();
+  });
+  const calInputs = root.querySelectorAll<HTMLInputElement>('[data-cal]');
+  calInputs.forEach((inp) => {
     const k = inp.dataset.cal as keyof typeof s0.cal;
     inp.value = String(s0.cal[k]);
     inp.addEventListener('change', () => {
@@ -315,16 +468,43 @@ export function mountHud(runner: Runner, recorder: Recorder) {
     if (res) recSummary.textContent = `${res.name} · ${res.waypoints.length} waypoints · ${res.actions.length} actions`;
     const ph = readPhase();
     phaseEl.textContent = ph ? '· ' + ph : '';
+    driverEl.hidden = true;
+    let rates: { maxVel: number; maxOmega: number } | null = null;
     if (ph) {
       const mode = readMode();
-      const info = robotInfo();
       const label = { singleplayer: 'Singleplayer', multiplayer: 'Multiplayer', ranked: 'Ranked', spectating: 'Spectating', event: 'Event', unknown: 'Unknown mode' }[mode.kind];
       modeEl.textContent = mode.allowed
-        ? `${label}${mode.alliance ? ' · ' + mode.alliance : ''} · ${info.name ? 'your robot: ' + info.name.replace('robot:', '') : 'looking for your robot…'}`
+        ? `${label}${mode.alliance ? ' · ' + mode.alliance : ''}`
         : `${label}: ${mode.reason}`;
+      if (mode.kind === 'singleplayer' || mode.kind === 'multiplayer') {
+        const { profile, team, balls, driveRates } = readDriverDisplay(mode.kind);
+        if (autoCal.checked) rates = driveRates;
+        robotEl.textContent = profile?.robotName ?? (team == null ? 'Looking for your robot…' : 'Your robot');
+        teamEl.textContent = [team != null && `Team ${team}`, profile?.name, profile?.region].filter(Boolean).join(' · ');
+        hopperEl.textContent = balls === null ? 'Hopper count unavailable' : `Hopper: ${balls} ${balls === 1 ? 'ball' : 'balls'}`;
+        driverEl.hidden = false;
+      }
       modeEl.style.color = mode.allowed ? '' : '#fca5a5';
     } else modeEl.textContent = '';
 
+    const plannedRobot = autoCal.checked ? plannerRobot(store.selected()?.robotId) : undefined;
+    const liveRates = rates;
+    rates ??= plannedRobot ?? null;
+    hopperEl.hidden = driverEl.hidden;
+    measureButton.disabled = autoCal.checked;
+    calSource.textContent = autoCal.checked
+      ? (liveRates ? 'Using the current robot’s speed and turn rate.' : plannedRobot ? `Using planner robot ${plannedRobot.label} until live calibration is available.` : 'Using saved settings until the robot profile is available.')
+      : 'Using manual calibration.';
+    for (const input of calInputs) {
+      const key = input.dataset.cal as keyof typeof s0.cal;
+      input.disabled = autoCal.checked && key !== 'deadzone';
+      if (root.activeElement !== input) {
+        const value = rates && key !== 'deadzone' ? rates[key] : store.settings().cal[key];
+        input.value = String(+value.toFixed(4));
+      }
+    }
+
+    drawField(ctx, view);
     drawField(ctx, view, GAME, { bg: '#21170f', edge: '#5a4330' });
     let path = t.state === 'running' && t.schedule ? t.schedule.path : null;
     if (!path) {
@@ -366,7 +546,7 @@ export function mountHud(runner: Runner, recorder: Recorder) {
     if (t.pose) drawRobot(ctx, view, t.pose, { size: GAME.robotSize, stroke: '#22c55e', fill: 'rgba(34,197,94,0.3)' });
   }
   refreshRoutines();
-  fitHeight();
+  fitWindow();
   runner.onChange = () => {
     owner = 'runner';
     render();
@@ -386,11 +566,13 @@ export function mountHud(runner: Runner, recorder: Recorder) {
   return {
     show() {
       host.style.display = '';
+      fitWindow();
       refreshRoutines();
     },
     refresh: refreshRoutines,
     destroy() {
-      window.removeEventListener('resize', fitHeight);
+      panelBounds.disconnect();
+      window.removeEventListener('resize', fitWindow);
       clearInterval(iv);
       host.remove();
     },

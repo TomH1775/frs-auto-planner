@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { actionTypesFor, gameOf } from '../../shared/routine';
 import { GAMES, GAME_IDS } from '../../shared/field';
 import { FieldCanvas } from './FieldCanvas';
+import { PromptPanel } from './PromptModal';
 import { ImportModal } from './ImportModal';
 import { SendToFRS } from './SendToFRS';
 import { ActionList, ConstraintsPanel, Inspector, ToolPalette } from './Sidebar';
@@ -112,6 +113,7 @@ export function App() {
           <Inspector />
           <ActionList />
           <ConstraintsPanel />
+          <PromptPanel />
         </aside>
       </main>
       <Timeline />

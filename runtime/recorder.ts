@@ -94,6 +94,14 @@ export class Recorder {
     else this.set('idle', this.state === 'armed' ? 'Recording cancelled.' : this.message);
   }
 
+  saveResult() {
+    try {
+      if (this.result) localStorage.setItem(LAST_KEY, JSON.stringify(this.result));
+    } catch {
+      /* The recording can still be exported if storage is unavailable. */
+    }
+  }
+
   private finish() {
     const dur = this.samples.length ? this.samples[this.samples.length - 1].t : 0;
     if (this.samples.length < 10 || dur < 0.5) {
@@ -101,6 +109,8 @@ export class Recorder {
       return;
     }
     try {
+      this.result = recordingToRoutine(this.samples);
+      this.saveResult();
       this.result = recordingToRoutine(this.samples, { game: GAME.id });
       try {
         localStorage.setItem(LAST_KEY, JSON.stringify(this.result));

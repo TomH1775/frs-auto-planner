@@ -7,6 +7,9 @@ export interface Settings {
   front: FrontAxis;
   /** standard-gamepad button index for each mechanism */
   buttonMap: Record<ButtonId, number>;
+  panelSize: { width: number; height: number } | null;
+  hopperLayout: { x: number; y: number; fontSize: number };
+  autoCalibrate: boolean;
   autoRearm: boolean;
   kP: number; // 1/s, position correction
   kTheta: number; // 1/s, heading correction
@@ -14,6 +17,11 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   cal: { ...DEFAULT_CALIBRATION },
+  front: '-x',
+  buttonMap: Object.fromEntries(BUTTON_IDS.map((b) => [b, BUTTONS[b].pad])) as Record<ButtonId, number>,
+  panelSize: null,
+  hopperLayout: { x: 0.5, y: 0, fontSize: 24 },
+  autoCalibrate: true,
   front: DEFAULT_FRONT,
   buttonMap: Object.fromEntries(buttonIds(GAME).map((b) => [b, GAME.buttons[b].pad])),
   autoRearm: true,
@@ -58,6 +66,7 @@ let settings: Settings = (() => {
   return {
     ...DEFAULT_SETTINGS,
     ...s,
+    hopperLayout: { ...DEFAULT_SETTINGS.hopperLayout, ...s.hopperLayout },
     cal: { ...DEFAULT_SETTINGS.cal, ...(s.cal ?? {}) },
     buttonMap: { ...DEFAULT_SETTINGS.buttonMap, ...(s.buttonMap ?? {}) },
   };
@@ -93,6 +102,13 @@ export const store = {
   },
   remove(id: string) {
     routines = routines.filter((r) => r.id !== id);
+    write(K.routines, routines);
+  },
+  rename(id: string, name: string, updatedAt: number) {
+    const routine = routines.find(r => r.id === id);
+    if (!routine) return;
+    routine.name = name;
+    routine.updatedAt = updatedAt;
     write(K.routines, routines);
   },
   settings: () => settings,

@@ -22,6 +22,10 @@ npm run dev        # builds the runtime, then serves the app at http://localhost
 
 ## Use it in FRS
 
+1. In the app, click **Send to FRS** and drag the **⚡ FRS Auto** button to your bookmarks bar.
+2. Open rebuilt.frsim.com, start a **Singleplayer** match or join a **Multiplayer** room, and click the bookmark. The FRS AUTO panel appears.
+3. The panel automatically uses the speed and turn rate of the robot you are driving. To measure them manually, uncheck **Use current robot’s drive calibration** under **Setup & calibration**, move to open space, and click **Calibrate**.
+4. Pick your routine and click **Arm for Auto** before the match starts. The routine runs when Auto begins and the panel re-arms itself for the next match. In Singleplayer you can press **R** to restart and run it again.
 1. In the planner, click **Send to FRS** and drag the **⚡ FRS Auto** button to your bookmarks bar. **You only do this once.** The bookmark is a tiny loader that fetches the newest version from the website every time you click it.
 2. Open the game (rebuilt.frsim.com, reefscape.frsim.com or crescendo.frsim.com), start a **Singleplayer** match or join a **Multiplayer** room, and click the bookmark. The FRS AUTO panel appears.
 3. Click **↻ Sync** in the panel to pull your latest autos from the planner website. A small window opens for a moment and closes itself; if the browser blocks it, allow pop-ups for frsim.com. Sync again after you edit an auto.
