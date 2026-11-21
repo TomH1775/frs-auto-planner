@@ -317,3 +317,56 @@ describe('recording -> routine', () => {
     expect(() => recordingToRoutine([])).toThrow(/too short/);
   });
 });
+
+describe('game-specific scoring actions', () => {
+  const mk = (game: 'reefscape' | 'crescendo') => ({ ...straight(4), game });
+
+  it('offers each game its own actions', async () => {
+    const { actionTypesFor } = await import('./routine');
+    const { GAMES: G } = await import('./field');
+    expect(actionTypesFor(G.reefscape)).toEqual(expect.arrayContaining(['coral', 'algaeReef', 'net', 'processor']));
+    expect(actionTypesFor(G.reefscape)).not.toContain('amp');
+    expect(actionTypesFor(G.crescendo)).toContain('amp');
+    expect(actionTypesFor(G.crescendo)).not.toContain('coral');
+    expect(actionTypesFor(G.rebuilt)).not.toContain('coral');
+  });
+
+  it('Reefscape coral: holds level + pole, scores, and lets FRS auto-align', async () => {
+    const { GAMES: G } = await import('./field');
+    const r = mk('reefscape');
+    const a = { ...makeAction('coral', { seg: 0, u: 0.5 }, G.reefscape), level: 3, side: 'right' as const, stop: false };
+    r.actions = [a];
+    const s = buildSchedule(r);
+    // forced to stop even though stop=false was saved
+    expect(s.steps.map((x) => x.kind)).toEqual(['drive', 'hold', 'drive']);
+    const t0 = s.timing[a.id].t0;
+    expect(buttonsAt(s, t0 + 0.2)).toEqual(new Set(['l3', 'rightPole']));
+    expect(buttonsAt(s, t0 + a.duration - 0.8)).toEqual(new Set(['l3', 'rightPole', 'score']));
+    expect(s.assists).toEqual([{ t0, t1: t0 + a.duration, actionId: a.id }]);
+  });
+
+  it('Reefscape algae from the reef, net and processor use the right buttons', async () => {
+    const { GAMES: G } = await import('./field');
+    const r = mk('reefscape');
+    const grab = { ...makeAction('algaeReef', { seg: 0, u: 0.2 }, G.reefscape), level: 3 };
+    const net = makeAction('net', { seg: 0, u: 0.5 }, G.reefscape);
+    const proc = makeAction('processor', { seg: 0, u: 0.9 }, G.reefscape);
+    r.actions = [grab, net, proc];
+    const s = buildSchedule(r);
+    const used = (id: string) => new Set(s.spans.filter((x) => x.actionId === id).map((x) => x.button));
+    expect(used(grab.id)).toEqual(new Set(['l3', 'leftPole', 'intake']));
+    expect(used(net.id)).toEqual(new Set(['l4', 'leftPole', 'score']));
+    expect(used(proc.id)).toEqual(new Set(['l1', 'score']));
+    expect(s.assists.map((x) => x.actionId)).toEqual([grab.id, net.id]); // processor has no auto-align
+  });
+
+  it('Crescendo: amp presses Amp, and a climb in Auto gets a warning', async () => {
+    const { GAMES: G } = await import('./field');
+    const r = mk('crescendo');
+    const amp = makeAction('amp', { seg: 0, u: 1 }, G.crescendo);
+    r.actions = [amp, makeAction('climb', { seg: 0, u: 0.5 }, G.crescendo)];
+    const s = buildSchedule(r);
+    expect(s.spans.find((x) => x.actionId === amp.id)?.button).toBe('amp');
+    expect(s.warnings.join()).toMatch(/only lets robots climb in Teleop/);
+  });
+});

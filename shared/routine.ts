@@ -22,7 +22,12 @@ export function extraButtons(g: GameDef): ButtonId[] {
   return buttonIds(g).filter((b) => !roles.has(b));
 }
 
-export type ActionType = 'intakeOn' | 'intakeOff' | 'intakeFor' | 'shoot' | 'climb' | 'button' | 'wait';
+export type ActionType =
+  | 'intakeOn' | 'intakeOff' | 'intakeFor' | 'shoot' | 'climb' | 'button' | 'wait'
+  // Reefscape
+  | 'coral' | 'algaeReef' | 'net' | 'processor'
+  // Crescendo
+  | 'amp';
 
 export interface ActionMeta {
   label: string;
@@ -32,6 +37,10 @@ export interface ActionMeta {
   defaultDuration: number;
   defaultStop: boolean;
   help: string;
+  /** only offered in these games (default: every game) */
+  games?: GameId[];
+  /** always stops the robot (it auto-aligns or needs to be parked) */
+  forcedStop?: boolean;
 }
 
 export const ACTIONS: Record<ActionType, ActionMeta> = {
@@ -42,13 +51,47 @@ export const ACTIONS: Record<ActionType, ActionMeta> = {
   climb: { label: 'Climb', short: 'C', color: '#a855f7', hasDuration: true, defaultDuration: 0.2, defaultStop: true, help: 'Press the climb button. Raise the time to hold it longer.' },
   button: { label: 'Press button', short: 'B', color: '#06b6d4', hasDuration: true, defaultDuration: 0.2, defaultStop: false, help: 'Press or hold any robot button.' },
   wait: { label: 'Wait', short: 'W', color: '#ef4444', hasDuration: true, defaultDuration: 1, defaultStop: true, help: 'Stop here for a set time.' },
+  coral: {
+    label: 'Score coral', short: 'Co', color: '#f472b6', hasDuration: true, defaultDuration: 2.5, defaultStop: true, forcedStop: true, games: ['reefscape'],
+    help: "Holds the level (L1–L4) and a pole button so FRS auto-aligns to the nearest reef pole, then scores. Place it near your reef (within 8 m); FRS does the final lining up.",
+  },
+  algaeReef: {
+    label: 'Take reef algae', short: 'Al', color: '#2dd4bf', hasDuration: true, defaultDuration: 2.5, defaultStop: true, forcedStop: true, games: ['reefscape'],
+    help: 'Holds L2 or L3 and a pole button so FRS auto-aligns to the algae on the nearest reef face, then runs the intake.',
+  },
+  net: {
+    label: 'Algae → net', short: 'N', color: '#38bdf8', hasDuration: true, defaultDuration: 3, defaultStop: true, forcedStop: true, games: ['reefscape'],
+    help: 'With algae held: holds L4 and a pole button so FRS auto-aligns to the barge, then scores in the net.',
+  },
+  processor: {
+    label: 'Algae → processor', short: 'P', color: '#818cf8', hasDuration: true, defaultDuration: 1.2, defaultStop: true, forcedStop: true, games: ['reefscape'],
+    help: "With algae held: holds L1 and scores into the processor. Auto-align always prefers the net, so end your path at the processor with the robot's algae side facing it.",
+  },
+  amp: {
+    label: 'Score amp', short: 'A', color: '#fb923c', hasDuration: true, defaultDuration: 1.2, defaultStop: true, forcedStop: true, games: ['crescendo'],
+    help: "Presses Amp. End your path at the amp (top wall) with the robot's amp side facing it. FRS needs it within about 40°.",
+  },
 };
+
+/** Action types offered for this game, in palette order. */
+export function actionTypesFor(g: GameDef): ActionType[] {
+  return (Object.keys(ACTIONS) as ActionType[]).filter((t) => !ACTIONS[t].games || ACTIONS[t].games!.includes(g.id));
+}
 
 export const ACTION_TYPES = Object.keys(ACTIONS) as ActionType[];
 
 /** Action label in this game's words (e.g. "Shoot" vs "Score"). */
 export function actionLabel(type: ActionType, g: GameDef): string {
-  return type === 'shoot' ? g.scoreLabel : ACTIONS[type].label;
+  return type === 'shoot' ? (g.id === 'crescendo' ? 'Shoot (speaker)' : g.scoreLabel) : ACTIONS[type].label;
+}
+
+/** e.g. "Score coral L4 · left" */
+export function actionTitle(a: Action, g: GameDef): string {
+  const base = a.type === 'button' ? `Press ${buttonLabel(g, a.button ?? '')}` : actionLabel(a.type, g);
+  if (a.type === 'coral') return `${base} L${a.level ?? 4} · ${a.side ?? 'left'}`;
+  if (a.type === 'algaeReef') return `${base} L${a.level === 3 ? 3 : 2} · ${a.side ?? 'left'}`;
+  if (a.type === 'net') return `${base} · ${a.side ?? 'left'}`;
+  return base;
 }
 
 /** Position on the path: segment index (between waypoint seg and seg+1) and Bézier parameter u ∈ [0,1]. */
@@ -67,6 +110,10 @@ export interface Action {
   stop: boolean;
   /** only for type 'button' */
   button?: ButtonId;
+  /** Reefscape: reef level 1–4 (coral) or 2–3 (algae on the reef) */
+  level?: number;
+  /** Reefscape: which pole button to align with (left/right as seen from your camera) */
+  side?: 'left' | 'right';
   /** shoot on the move: drive at this % of max speed while shooting (default 50) */
   speedPct?: number;
 }
@@ -138,8 +185,72 @@ export function buttonForAction(a: Action, g: GameDef): ButtonId | null {
       return g.roles.climb;
     case 'button':
       return a.button && a.button in g.buttons ? a.button : extraButtons(g)[0] ?? null;
+    case 'coral':
+    case 'net':
+    case 'processor':
+      return g.roles.score;
+    case 'algaeReef':
+      return g.roles.intake;
+    case 'amp':
+      return 'amp' in g.buttons ? 'amp' : null;
     case 'wait':
       return null;
+  }
+}
+
+/** One button held during an action, in seconds from the action's start. */
+export interface PlannedPress {
+  button: ButtonId;
+  t0: number;
+  t1: number;
+}
+
+/**
+ * What an action does with the robot's buttons, and when the path follower must let go of
+ * the sticks so FRS's own auto-align can drive (`assist`, seconds from the action's start).
+ * Recipes for Reefscape and Crescendo were worked out in FRS (see docs/recon.md).
+ */
+export function actionPlan(a: Action, g: GameDef): { presses: PlannedPress[]; assist: [number, number] | null } {
+  const D = Math.max(0.1, a.duration);
+  const has = (b: string) => b in g.buttons;
+  const press = (button: string, t0: number, t1: number): PlannedPress[] => (has(button) ? [{ button, t0, t1 }] : []);
+  const pole = a.side === 'right' ? 'rightPole' : 'leftPole';
+  switch (a.type) {
+    case 'intakeOn':
+    case 'intakeOff':
+    case 'wait':
+      return { presses: [], assist: null };
+    case 'intakeFor':
+      return { presses: press(g.roles.intake, 0, D), assist: null };
+    case 'shoot':
+      return { presses: press(g.roles.score, 0, D), assist: null };
+    case 'climb':
+      return { presses: press(g.roles.climb, 0, D), assist: null };
+    case 'button': {
+      const b = buttonForAction(a, g);
+      return { presses: b ? press(b, 0, D) : [], assist: null };
+    }
+    case 'coral': {
+      // hold level + pole: FRS drives to the pole (~0.5–1.5 s), then score while still holding the level
+      const at = Math.max(0.6, D - 1);
+      const level = `l${Math.min(4, Math.max(1, a.level ?? 4))}`;
+      return { presses: [...press(level, 0, D), ...press(pole, 0, at + 0.4), ...press(g.roles.score, at, at + 0.4)], assist: [0, D] };
+    }
+    case 'algaeReef': {
+      const level = `l${a.level === 3 ? 3 : 2}`;
+      const grab = Math.max(0.6, D - 1.2);
+      return { presses: [...press(level, 0, D), ...press(pole, 0, D), ...press(g.roles.intake, grab, D)], assist: [0, D] };
+    }
+    case 'net': {
+      const at = Math.max(0.8, D - 0.9);
+      return { presses: [...press('l4', 0, D), ...press(pole, 0, at + 0.4), ...press(g.roles.score, at, at + 0.4)], assist: [0, D] };
+    }
+    case 'processor': {
+      const at = Math.max(0.2, D - 0.6);
+      return { presses: [...press('l1', 0, D), ...press(g.roles.score, at, Math.max(at + 0.2, D - 0.2))], assist: null };
+    }
+    case 'amp':
+      return { presses: press('amp', 0, D), assist: null };
   }
 }
 
@@ -150,7 +261,12 @@ export function makeWaypoint(x: number, y: number, heading: number | null = null
 export function makeAction(type: ActionType, at: PathPos, g: GameDef = GAMES[DEFAULT_GAME]): Action {
   const m = ACTIONS[type];
   const button = type === 'button' ? extraButtons(g)[0] ?? buttonIds(g)[0] : undefined;
-  return { id: uid('a'), type, at, duration: m.defaultDuration, stop: m.defaultStop, ...(button ? { button } : {}) };
+  const extra: Partial<Action> = {};
+  if (button) extra.button = button;
+  if (type === 'coral') Object.assign(extra, { level: 4, side: 'left' });
+  if (type === 'algaeReef') Object.assign(extra, { level: 2, side: 'left' });
+  if (type === 'net') extra.side = 'left';
+  return { id: uid('a'), type, at, duration: m.defaultDuration, stop: m.defaultStop, ...extra };
 }
 
 /** Recompute automatic (Catmull-Rom style) handles for waypoints flagged autoHandles. */

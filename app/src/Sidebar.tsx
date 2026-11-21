@@ -1,4 +1,4 @@
-import { ACTIONS, ACTION_TYPES, DEFAULT_LAT_ACCEL, DEFAULT_SHOOT_SPEED_PCT, actionLabel, buttonIds, buttonLabel, type ActionType, type ButtonId } from '../../shared/routine';
+import { ACTIONS, DEFAULT_LAT_ACCEL, DEFAULT_SHOOT_SPEED_PCT, actionLabel, actionTitle, actionTypesFor, buttonIds, buttonLabel, type ActionType, type ButtonId } from '../../shared/routine';
 import { posToS } from '../../shared/path';
 import { useStore, type Tool } from './store';
 import { fmtDeg, useGame, useRoutine, useSchedule } from './useSchedule';
@@ -27,7 +27,7 @@ export function ToolPalette() {
         {T('waypoint', 'Draw path', 'P')}
       </div>
       <h4>Add action on the path</h4>
-      <div className="tools">{ACTION_TYPES.map((t, i) => T(t, actionLabel(t, game), String(i + 1), ACTIONS[t].color))}</div>
+      <div className="tools">{actionTypesFor(game).map((t, i) => T(t, actionLabel(t, game), i < 9 ? String(i + 1) : '', ACTIONS[t].color))}</div>
       <p className="hint">
         {tool === 'select' && 'Drag points, curve handles, the blue heading knob, or action markers. Right-click deletes.'}
         {tool === 'waypoint' && 'Click empty field to extend the path. Click on the path to insert a point.'}
@@ -109,7 +109,7 @@ export function Inspector() {
       <label>
         Type
         <select value={a.type} onChange={(e) => s.updateAction(a.id, { type: e.target.value as ActionType, duration: ACTIONS[e.target.value as ActionType].defaultDuration })}>
-          {ACTION_TYPES.map((t) => (
+          {actionTypesFor(game).map((t) => (
             <option key={t} value={t}>
               {actionLabel(t, game)}
             </option>
@@ -130,14 +130,42 @@ export function Inspector() {
       )}
       {meta.hasDuration && (
         <label>
-          {a.type === 'wait' ? 'Wait for (s)' : 'Hold button for (s)'}
+          {a.type === 'wait' ? 'Wait for (s)' : meta.forcedStop ? 'Time for this step (s)' : 'Hold button for (s)'}
           <input type="number" min="0" step="0.1" value={a.duration} onChange={(e) => s.updateAction(a.id, { duration: Math.max(0, num(e.target.value, a.duration)) })} />
         </label>
       )}
-      <label className="check">
-        <input type="checkbox" checked={a.stop} onChange={(e) => s.updateAction(a.id, { stop: e.target.checked })} />
-        Stop the robot while doing this
-      </label>
+      {(a.type === 'coral' || a.type === 'algaeReef') && (
+        <label>
+          Level
+          <div className="seg">
+            {(a.type === 'coral' ? [1, 2, 3, 4] : [2, 3]).map((l) => (
+              <button key={l} className={(a.level ?? (a.type === 'coral' ? 4 : 2)) === l ? 'on' : ''} onClick={() => s.updateAction(a.id, { level: l })}>
+                L{l}
+              </button>
+            ))}
+          </div>
+        </label>
+      )}
+      {(a.type === 'coral' || a.type === 'algaeReef' || a.type === 'net') && (
+        <label>
+          Pole button (left / right as seen from your camera)
+          <div className="seg">
+            {(['left', 'right'] as const).map((side) => (
+              <button key={side} className={(a.side ?? 'left') === side ? 'on' : ''} onClick={() => s.updateAction(a.id, { side })}>
+                {side === 'left' ? 'Left pole' : 'Right pole'}
+              </button>
+            ))}
+          </div>
+        </label>
+      )}
+      {meta.forcedStop ? (
+        <p className="hint">The robot stops for this step{ACTIONS[a.type].help.includes('auto-align') ? ' and FRS auto-aligns it, so the path follower lets go of the sticks' : ''}.</p>
+      ) : (
+        <label className="check">
+          <input type="checkbox" checked={a.stop} onChange={(e) => s.updateAction(a.id, { stop: e.target.checked })} />
+          Stop the robot while doing this
+        </label>
+      )}
       {a.type === 'shoot' && !a.stop && (
         <label>
           Drive speed while shooting: {a.speedPct ?? DEFAULT_SHOOT_SPEED_PCT}% of max ({(((a.speedPct ?? DEFAULT_SHOOT_SPEED_PCT) / 100) * r.constraints.maxVel).toFixed(2)} m/s)
@@ -205,7 +233,7 @@ export function ActionList() {
             >
               <span className="dot" style={{ background: m.color, borderRadius: a.stop ? 2 : 99 }} />
               <span className="grow">
-                {a.type === 'button' ? `Press ${buttonLabel(game, a.button ?? '')}` : actionLabel(a.type, game)}
+                {actionTitle(a, game)}
                 {m.hasDuration && a.type !== 'climb' && a.type !== 'button' ? ` ${a.duration}s` : ''}
                 {a.stop ? <em> · stop</em> : null}
                 {a.type === 'shoot' && !a.stop ? <em> · moving {a.speedPct ?? DEFAULT_SHOOT_SPEED_PCT}%</em> : null}

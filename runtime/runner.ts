@@ -220,8 +220,14 @@ export class Runner {
     let omega = ref.omega + settings.kTheta * eh;
     if (Math.abs(eh) < 0.015 && Math.abs(ref.omega) < 1e-3) omega = 0;
 
-    const s = stickFromVelocity(vx, vy, omega, this.t.alliance, settings.cal, driveFrame());
-    setSticks(s.lx, s.ly, s.rx);
+    // FRS's own auto-align is driving (e.g. Reefscape reef poles): let go of the sticks,
+    // since any stick input over 15% would cancel it
+    const assisting = sched.assists.some((w) => el >= w.t0 && el < w.t1);
+    if (assisting) setSticks(0, 0, 0);
+    else {
+      const s = stickFromVelocity(vx, vy, omega, this.t.alliance, settings.cal, driveFrame());
+      setSticks(s.lx, s.ly, s.rx);
+    }
     const pressed = new Set<number>();
     for (const b of buttonsAt(sched, el)) pressed.add(settings.buttonMap[b]);
     setButtons(pressed);

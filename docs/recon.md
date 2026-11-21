@@ -87,3 +87,21 @@ Default pad mappings (standard indices):
 
 FRS also contains a hidden built-in auto runner (PathPlanner-like projects with named commands for
 real teams' bots), switched off by a feature flag that always returns false. It isn't used here.
+
+## Scoring (tested in FRS, 2026-11-20)
+**Reefscape** (team 2056):
+- The setpoint buttons set `input.level` (1–4) while held. What a level means depends on what the robot holds (`readSetpoint`).
+  Holding algae: L4 = net, L1 = processor. Otherwise, with an algae-capable intake, L2/L3 = take algae off the reef; else coral at that level.
+- Pole buttons set `input.align` (−1 left / +1 right). Holding one **auto-aligns** (`startAlign`): it drives to a reef pole for coral
+  (≤ 8 m away), to the reef-face algae, or to the net/processor spot. It times out after 5 s, and stick input over 0.15 cancels it.
+  With algae held, the net wins whenever it's closer than the reef, so processor auto-align is rare.
+- Tested: L4 + left pole + Score from the start spot → aligned to (5.35, 2.86), +5 in Teleop / +7 in Auto. L2/L3 + pole + Intake → algae.
+  Algae + L4 + pole + Score → net +4. Leave in Auto +3.
+- Through the runtime: a path to (6.1, 2.4) + "Score coral L4 left" scored in Auto (Blue 10 = leave + L4).
+
+**Crescendo** (team 254: intake back, shooter front, amp back):
+- Shoot (RT) auto-aims at the speaker. Past `shooter.maxRange` it passes to the wing. +5 Auto / +2 Teleop. Shooting doesn't rotate the robot.
+- Amp (RB) needs `nearAmp` and `ampFacing` (the amp side within about 40° of the wall normal). +1 Teleop.
+- Climb (L-stick press) only works in **Teleop** near a chain (`phase === "teleop"`). One tap goes climbing → onstage, +3.
+  The trap scores automatically when a trap-capable robot finishes climbing with a note.
+- The intake only grabs a note when the intake side faces it.

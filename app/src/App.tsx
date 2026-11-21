@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ACTION_TYPES, gameOf } from '../../shared/routine';
+import { actionTypesFor, gameOf } from '../../shared/routine';
 import { GAMES, GAME_IDS } from '../../shared/field';
 import { FieldCanvas } from './FieldCanvas';
 import { ImportModal } from './ImportModal';
@@ -86,7 +86,10 @@ export function App() {
       if (mod) return;
       if (e.key === 'v' || e.key === 'Escape') s.setTool('select');
       else if (e.key === 'p') s.setTool('waypoint');
-      else if (/^[1-9]$/.test(e.key) && ACTION_TYPES[+e.key - 1]) s.setTool(ACTION_TYPES[+e.key - 1]);
+      else if (/^[1-9]$/.test(e.key)) {
+        const types = actionTypesFor(gameOf(s.current()));
+        if (types[+e.key - 1]) s.setTool(types[+e.key - 1]);
+      }
       else if (e.key === ' ') {
         e.preventDefault();
         s.setPlaying(!s.playing);

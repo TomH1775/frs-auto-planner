@@ -32,6 +32,22 @@ No internet, or want a frozen copy? Send to FRS also has an **offline bookmark**
 
 Taking over: press any key (Esc works) or touch a real controller, and the runtime lets go instantly.
 
+## Scoring actions per game
+
+Each game's palette has the ways that game actually scores (worked out by testing in FRS):
+
+| Game | Action | What it does |
+|---|---|---|
+| All | **Shoot / Score**, **Intake on/off/for**, **Climb**, **Wait**, **Press button** | Generic buttons. Shoot can be done on the move. |
+| Reefscape | **Score coral** (L1–L4, left/right pole) | Holds the level + pole button. FRS **auto-aligns** to the nearest reef pole, then the action scores. Place it near your reef. |
+| Reefscape | **Take reef algae** (L2/L3, pole) | Auto-aligns to the algae on the nearest reef face and runs the intake. |
+| Reefscape | **Algae → net** | With algae held, auto-aligns to the barge and scores in the net. |
+| Reefscape | **Algae → processor** | With algae held, holds L1 and scores. FRS's auto-align always prefers the net, so end your path at the processor facing it. |
+| Crescendo | **Shoot (speaker)** | FRS aims the shot. Out of range, it passes toward your wing instead. |
+| Crescendo | **Score amp** | End your path at the amp with the robot's amp side facing the wall (within about 40°). |
+
+While FRS auto-aligns, FRS Auto lets go of the sticks (any stick input would cancel the align); the timeline shows these as striped **align** blocks. In Crescendo you can only climb in Teleop, and the trap is scored automatically by climbing with a note, so neither works in Auto.
+
 ## Record an auto in FRS
 
 Instead of drawing a routine, you can drive it yourself and import the recording:

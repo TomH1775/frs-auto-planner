@@ -1,6 +1,6 @@
 import type { Pose } from './field';
 import { posToS, samplePath, sampleAt, type SampledPath } from './path';
-import { ACTIONS, buttonForAction, gameOf, moveSpeedFraction, type Action, type ButtonId, type Routine } from './routine';
+import { ACTIONS, actionPlan, gameOf, moveSpeedFraction, type Action, type ButtonId, type Routine } from './routine';
 import { duration, profileRange, stateAt, timeAtS, type SpeedZone, type TrajState } from './trajectory';
 
 export type Step =
@@ -26,6 +26,8 @@ export interface Schedule {
   steps: Step[];
   spans: ButtonSpan[];
   timing: Record<string, ActionTiming>;
+  /** windows (absolute seconds) where FRS's auto-align drives and the follower must let go */
+  assists: { t0: number; t1: number; actionId: string }[];
   /** stretches of path driven slowly (shooting on the move) */
   zones: (SpeedZone & { actionId: string })[];
   /** when the last drive/hold step ends */
@@ -43,10 +45,10 @@ export function buildSchedule(r: Routine): Schedule {
   const warnings: string[] = [];
   const steps: Step[] = [];
   const timing: Record<string, ActionTiming> = {};
-  if (path.samples.length === 0) return { path, steps, spans: [], timing, zones: [], driveEnd: 0, total: 0, warnings: ['Add a starting waypoint.'] };
+  if (path.samples.length === 0) return { path, steps, spans: [], assists: [], timing, zones: [], driveEnd: 0, total: 0, warnings: ['Add a starting waypoint.'] };
 
   const withS = r.actions
-    .map((a, order) => ({ a, order, s: posToS(path, a.at) }))
+    .map((a, order) => ({ a: ACTIONS[a.type].forcedStop && !a.stop ? { ...a, stop: true } : a, order, s: posToS(path, a.at) }))
     .sort((p, q) => p.s - q.s || p.order - q.order);
 
   // stop points split the path into legs that each start and end at rest
@@ -132,6 +134,7 @@ export function buildSchedule(r: Routine): Schedule {
 
   // turn actions into button holds
   const spans: ButtonSpan[] = [];
+  const assists: Schedule['assists'] = [];
   const ordered = [...withS].sort((p, q) => timing[p.a.id].t0 - timing[q.a.id].t0 || p.order - q.order);
   let intakeOn: { t0: number; id: string } | null = null;
   for (const { a } of ordered) {
@@ -149,8 +152,10 @@ export function buildSchedule(r: Routine): Schedule {
       } else warnings.push('"Intake off" with no "Intake on" before it.');
       continue;
     }
-    const b = buttonForAction(a, game);
-    if (b && ACTIONS[a.type].hasDuration) spans.push({ button: b, t0: tm.t0, t1: tm.t0 + Math.max(0.1, a.duration), actionId: a.id });
+    if (!ACTIONS[a.type].hasDuration) continue;
+    const plan = actionPlan(a, game);
+    for (const p of plan.presses) spans.push({ button: p.button, t0: tm.t0 + p.t0, t1: tm.t0 + p.t1, actionId: a.id });
+    if (plan.assist) assists.push({ t0: tm.t0 + plan.assist[0], t1: tm.t0 + plan.assist[1], actionId: a.id });
   }
   if (intakeOn) spans.push({ button: game.roles.intake, t0: intakeOn.t0, t1: Infinity, actionId: intakeOn.id });
 
@@ -159,8 +164,12 @@ export function buildSchedule(r: Routine): Schedule {
   if (total > game.autoLength) warnings.push(`Routine takes ${total.toFixed(1)} s but auto is only ${game.autoLength} s.`);
   for (const a of r.actions) {
     if (a.type === 'wait' && !a.stop) warnings.push('A "Wait" that does not stop the robot does nothing.');
+    if (ACTIONS[a.type].games && !ACTIONS[a.type].games!.includes(game.id)) warnings.push(`"${ACTIONS[a.type].label}" isn't a ${game.name} action.`);
   }
-  return { path, steps, spans, timing, zones, driveEnd, total, warnings };
+  if (game.id === 'crescendo' && r.actions.some((a) => a.type === 'climb')) {
+    warnings.push('Crescendo only lets robots climb in Teleop, so a climb in Auto does nothing.');
+  }
+  return { path, steps, spans, assists, timing, zones, driveEnd, total, warnings };
 }
 
 /** Reference pose at schedule time t (for previews and the follower). */
