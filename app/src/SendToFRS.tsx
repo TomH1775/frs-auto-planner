@@ -57,7 +57,7 @@ export function SendToFRS({ onClose }: { onClose: () => void }) {
             <b>Drag this button to your bookmarks bar</b> (show it with ⌘⇧B):
             <div className="bm-row">
               <a ref={link} className="bookmarklet" onClick={(e) => e.preventDefault()} draggable>
-                ⚡ FRS Auto
+                ⚡ FRS Auto 21
               </a>
               <label className="check">
                 <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> include all {routines.length} routines
@@ -72,7 +72,7 @@ export function SendToFRS({ onClose }: { onClose: () => void }) {
             Choose your auto and click <b>Arm for Auto</b> before the match starts. It drives the routine when Auto begins and re-arms for the next match. (In Singleplayer, press <kbd>R</kbd> to restart and run it again.)
           </li>
           <li>
-            The first time, open <b>Setup &amp; calibration</b> → <b>Calibrate</b> with the robot in open space (for example the neutral zone).
+            Drive calibration follows your current robot automatically. You can see its speed and turn rate under <b>Setup &amp; calibration</b>.
           </li>
         </ol>
         <div className="row">

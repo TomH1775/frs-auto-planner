@@ -1,8 +1,9 @@
+import { plannerRobot } from '../shared/robots';
 import { FIELD, allianceOfX, wrapAngle, type Pose } from '../shared/field';
 import { mirrorRoutine, type Routine } from '../shared/routine';
 import { buildSchedule, buttonsAt, referenceAt, type Schedule } from '../shared/schedule';
 import { stickFromVelocity } from '../shared/stick';
-import { AutoWatch, isAutoPhase, readMode, readPose, robotInfo } from './game';
+import { AutoWatch, isAutoPhase, readDriverDisplay, readMode, readPose, robotInfo } from './game';
 import { isActive, realInputActive, setActive, setButtons, setSticks } from './pad';
 import { store } from './storage';
 
@@ -31,6 +32,7 @@ export class Runner {
   private waited = 0;
   private lastFrame = 0;
   private gated = false;
+  private plannedRobot = plannerRobot();
   private watch = new AutoWatch();
   /** when Auto started while armed; we retry briefly because FRS rebuilds the robot on restart */
   private pendingStart = 0;
@@ -111,6 +113,7 @@ export class Runner {
       this.set('idle', 'Routine has no path.');
       return null;
     }
+    this.plannedRobot = plannerRobot(routine.robotId);
     this.t.schedule = schedule;
     this.t.alliance = alliance;
     this.t.trail = [];
@@ -209,7 +212,10 @@ export class Runner {
     const eh = wrapAngle(ref.pose.heading - pose.heading);
     let vx = ref.vx + settings.kP * ex;
     let vy = ref.vy + settings.kP * ey;
-    const vmax = settings.cal.maxVel;
+    const rates = settings.autoCalibrate && (mode.kind === 'singleplayer' || mode.kind === 'multiplayer')
+      ? readDriverDisplay(mode.kind).driveRates ?? this.plannedRobot : null;
+    const cal = rates ? { ...settings.cal, ...rates } : settings.cal;
+    const vmax = cal.maxVel;
     const m = Math.hypot(vx, vy);
     if (m > vmax) {
       vx *= vmax / m;
@@ -220,7 +226,7 @@ export class Runner {
     let omega = ref.omega + settings.kTheta * eh;
     if (Math.abs(eh) < 0.015 && Math.abs(ref.omega) < 1e-3) omega = 0;
 
-    const s = stickFromVelocity(vx, vy, omega, this.t.alliance, settings.cal);
+    const s = stickFromVelocity(vx, vy, omega, this.t.alliance, cal);
     setSticks(s.lx, s.ly, s.rx);
     const pressed = new Set<number>();
     for (const b of buttonsAt(sched, el)) pressed.add(settings.buttonMap[b]);

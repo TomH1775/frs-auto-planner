@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FRS Auto API keys</title>
+<style>body{max-width:28rem;margin:10vh auto;padding:1rem;background:#12151c;color:#e5e7eb;font:16px system-ui}label,input,button{display:block;margin:.7rem 0}input{box-sizing:border-box;width:100%;padding:.6rem}button{padding:.6rem 1rem}</style>
+<h1>FRS Auto API keys</h1><form><label>Username<input name="username" autocomplete="username" required></label>
+<label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+<button>Sign in and generate key</button></form><p role="status"></p>
+<label hidden id="output" style="display:none">Copy this key into the planner<input readonly onclick="this.select()"></label>
+<script>
+const form=document.querySelector('form'), statusLine=document.querySelector('[role=status]'), output=document.querySelector('#output');
+form.onsubmit=async event=>{
+ event.preventDefault(); form.querySelector('button').disabled=true; output.style.display='none';
+ try {
+   const response=await fetch('/keys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(form)))});
+   if(!response.ok) throw new Error(response.status===401?'Incorrect username or password.':'Key service returned HTTP '+response.status);
+   const data=await response.json(); output.querySelector('input').value=data.key; output.hidden=false;output.style.display='block';form.reset();statusLine.textContent='Key generated.';
+ } catch(error){statusLine.textContent=error.message} finally{form.querySelector('button').disabled=false}
+};
+</script></html>

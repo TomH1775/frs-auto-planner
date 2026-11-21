@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ACTION_TYPES } from '../../shared/routine';
 import { FieldCanvas } from './FieldCanvas';
+import { PromptPanel } from './PromptModal';
 import { ImportModal } from './ImportModal';
 import { SendToFRS } from './SendToFRS';
 import { ActionList, ConstraintsPanel, Inspector, ToolPalette } from './Sidebar';
@@ -100,6 +101,7 @@ export function App() {
           <Inspector />
           <ActionList />
           <ConstraintsPanel />
+          <PromptPanel />
         </aside>
       </main>
       <Timeline />

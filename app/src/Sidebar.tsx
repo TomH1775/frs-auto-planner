@@ -1,3 +1,4 @@
+import { PLANNER_ROBOTS, plannerRobot } from '../../shared/robots';
 import { ACTIONS, ACTION_TYPES, BUTTONS, BUTTON_IDS, DEFAULT_LAT_ACCEL, DEFAULT_SHOOT_SPEED_PCT, type ActionType, type ButtonId } from '../../shared/routine';
 import { posToS } from '../../shared/path';
 import { useStore, type Tool } from './store';
@@ -221,9 +222,25 @@ export function ConstraintsPanel() {
   const sched = useSchedule();
   const s = useStore.getState();
   const c = r.constraints;
+  const robot = plannerRobot(r.robotId);
   return (
     <section className="panel">
-      <h3>Speed limits</h3>
+      <h3>Robot &amp; speed limits</h3>
+      <label>
+        Robot for this auto
+        <select value={robot?.id ?? ''} onChange={(e) => {
+          const next = plannerRobot(Number(e.target.value));
+          s.edit(current => ({
+            ...current,
+            robotId: next?.id,
+            constraints: next ? { ...current.constraints, maxVel: next.maxVel, maxAccel: next.maxAccel, maxAngVel: next.maxOmega } : current.constraints,
+          }));
+        }}>
+          <option value="">Custom limits</option>
+          {PLANNER_ROBOTS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+        </select>
+      </label>
+      {robot && <p className="hint">{robot.team} · {robot.region}</p>}
       <div className="grid2">
         <label>
           Max speed (m/s)

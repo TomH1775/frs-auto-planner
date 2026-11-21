@@ -22,7 +22,7 @@ npm run dev        # builds the runtime, then serves the app at http://localhost
 
 1. In the app, click **Send to FRS** and drag the **⚡ FRS Auto** button to your bookmarks bar.
 2. Open rebuilt.frsim.com, start a **Singleplayer** match or join a **Multiplayer** room, and click the bookmark. The FRS AUTO panel appears.
-3. The first time only: open **Setup & calibration**, drive to open space (for example the neutral zone), and click **Calibrate**.
+3. The panel automatically uses the speed and turn rate of the robot you are driving. To measure them manually, uncheck **Use current robot’s drive calibration** under **Setup & calibration**, move to open space, and click **Calibrate**.
 4. Pick your routine and click **Arm for Auto** before the match starts. The routine runs when Auto begins and the panel re-arms itself for the next match. In Singleplayer you can press **R** to restart and run it again.
 
 To update a routine without re-dragging the bookmark, click **Copy routine** in the app. Then in the game panel, choose **Load routine**, paste, and click **Load**.

@@ -139,9 +139,19 @@ let netStore: Any = null; // { status, ranked, room, spectating, you, ... }
 let gameStore: Any = null; // { screen, alliance, team, startMatch, ... }
 let netView: Any = null; // { view: { robots }, localId, predicted, ... }
 
+interface TeamProfile {
+  number: number;
+  shownAs?: { number: number };
+  robotName: string;
+  name: string;
+  region: string;
+  drive?: { feel?: { maxSpeed: number; turnRate: number } };
+}
+let roster: TeamProfile[] | null = null;
+
 function findStores() {
   if (!modules || performance.now() - storesScanAt < 2000) return;
-  if (netStore && gameStore && netView) return;
+  if (netStore && gameStore && netView && roster) return;
   storesScanAt = performance.now();
   for (const m of modules.values()) {
     let e: Any;
@@ -159,6 +169,7 @@ function findStores() {
         continue;
       }
       if (!v) continue;
+      if (!roster && k === 'ALL_TEAMS' && Array.isArray(v) && v.some(team => team?.hopper && typeof team.robotName === 'string')) roster = v;
       if (typeof v === 'function' && typeof v.getState === 'function') {
         let st: Any;
         try {
@@ -255,6 +266,29 @@ export function robotInfo(): { count: number; name: string | null } {
   // re-checked periodically: in multiplayer, which robot is ours comes from the network view
   if (!robot || !attachedToScene(robot) || performance.now() - robotScanAt > 2000) scanRobots();
   return { count: robotCount, name: robot ? robot.name : null };
+}
+
+/** Both singleplayer and multiplayer publish a robot snapshot in the match view. */
+export function readDriverDisplay(kind: 'singleplayer' | 'multiplayer') {
+  findStores();
+  const robots = netView?.view?.robots;
+  const local = kind === 'multiplayer' ? localNetRobot()
+    : Array.isArray(robots) ? robots.find((r: Any) => r.local === true) : null;
+  const team = local?.team ?? (kind === 'singleplayer' ? gameState()?.team : null);
+  const profile = roster?.find(entry => entry.number === team);
+  const fuel = local?.hopperFuel;
+  const feel = profile?.drive?.feel;
+  // FRS maps full translation to maxSpeed and full rotation to 45% of turnRate.
+  const driveRates = feel && Number.isFinite(feel.maxSpeed) && feel.maxSpeed > 0
+    && Number.isFinite(feel.turnRate) && feel.turnRate > 0
+    ? { maxVel: feel.maxSpeed, maxOmega: feel.turnRate * 0.45 }
+    : null;
+  return {
+    team: profile?.shownAs?.number ?? team,
+    profile,
+    driveRates,
+    balls: Number.isSafeInteger(fuel) && fuel >= 0 ? fuel as number : null,
+  };
 }
 
 /** Robot pose in WPILib blue-origin field coordinates, or null if unavailable. */
