@@ -80,6 +80,17 @@ export const store = {
     write(K.routines, routines);
     store.select(r.id);
   },
+  /** Add/replace many routines without changing which one is selected (unless none is). */
+  upsertMany(list: Routine[]) {
+    for (const r of list) {
+      const i = routines.findIndex((x) => x.id === r.id);
+      if (i >= 0) routines[i] = r;
+      else routines.push(r);
+    }
+    write(K.routines, routines);
+    if (!mine().some((r) => r.id === selected) && mine()[0]) store.select(mine()[0].id);
+    return list.filter((r) => gameOf(r).id === GAME.id).length;
+  },
   remove(id: string) {
     routines = routines.filter((r) => r.id !== id);
     write(K.routines, routines);

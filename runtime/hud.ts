@@ -5,6 +5,7 @@ import { allianceOfX } from '../shared/field';
 import type { Runner } from './runner';
 import type { Recorder } from './recorder';
 import { store } from './storage';
+import { syncFromPlanner } from './sync';
 import { GAME, readMode, readPhase, robotInfo } from './game';
 
 // Fall theme to match FRS's Thanksgiving look: warm browns, cream text, gold accents.
@@ -44,6 +45,7 @@ button.stop { background: var(--danger); border-color: var(--danger-line); color
 button.stop:hover { background: #a3321f; }
 button.rec { background: #3a1d12; border-color: #7a3a1d; color: #ffd8c2; }
 button.rec:hover { background: #4a2516; }
+button.sync { flex: none; padding: 5px 8px; }
 .recres { padding: 7px 9px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); display: grid; gap: 6px; }
 canvas { width: 100%; border-radius: 8px; display: block; border: 1px solid var(--line); box-sizing: border-box; }
 details summary { cursor: pointer; color: var(--muted); }
@@ -70,7 +72,7 @@ export function mountHud(runner: Runner, recorder: Recorder) {
     <div class="bd">
       <div class="st" data-status></div>
       <div class="muted" data-mode></div>
-      <div class="row"><select data-routines></select><button class="ic" data-del title="Delete routine">🗑</button></div>
+      <div class="row"><select data-routines></select><button class="b sync" data-sync title="Get your latest autos from the planner website">↻ Sync</button><button class="ic" data-del title="Delete routine">🗑</button></div>
       <canvas data-map width="560" height="280"></canvas>
       <div class="row">
         <button class="b go" data-arm title="Start automatically when Auto begins">Arm for Auto</button>
@@ -179,12 +181,25 @@ export function mountHud(runner: Runner, recorder: Recorder) {
     const cur = store.selected();
     sel.innerHTML = store.routines().length
       ? store.routines().map((r) => `<option value="${r.id}" ${cur?.id === r.id ? 'selected' : ''}>${escapeHtml(r.name)}</option>`).join('')
-      : '<option>(no routines: load one below)</option>';
+      : '<option>(no autos yet: click ↻ Sync)</option>';
     cachedPath = null;
   };
   sel.addEventListener('change', () => {
     store.select(sel.value);
     cachedPath = null;
+  });
+  $('[data-sync]').addEventListener('click', () => {
+    const setMsg = (m: string) => {
+      runner.t.message = m;
+      runner.onChange();
+    };
+    setMsg('Syncing with the planner…');
+    syncFromPlanner((list) => store.upsertMany(list))
+      .then((n) => {
+        refreshRoutines();
+        setMsg(n ? `Synced ${n} ${GAME.name} auto${n === 1 ? '' : 's'} from the planner.` : `Synced, but the planner has no ${GAME.name} autos yet.`);
+      })
+      .catch((e: Error) => setMsg(e.message));
   });
   $('[data-del]').addEventListener('click', () => {
     const r = store.selected();
