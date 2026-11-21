@@ -22,12 +22,13 @@ npm run dev        # builds the runtime, then serves the app at http://localhost
 
 ## Use it in FRS
 
-1. In the app, click **Send to FRS** and drag the **⚡ FRS Auto** button to your bookmarks bar.
+1. In the planner, click **Send to FRS** and drag the **⚡ FRS Auto** button to your bookmarks bar. **You only do this once.** The bookmark is a tiny loader that fetches the newest version from the website every time you click it.
 2. Open the game (rebuilt.frsim.com, reefscape.frsim.com or crescendo.frsim.com), start a **Singleplayer** match or join a **Multiplayer** room, and click the bookmark. The FRS AUTO panel appears.
-3. The first time only: open **Setup & calibration**, drive to open space (for example the neutral zone), and click **Calibrate**.
-4. Pick your routine and click **Arm for Auto** before the match starts. The routine runs when Auto begins and the panel re-arms itself for the next match. In Singleplayer you can press **R** to restart and run it again.
+3. Click **↻ Sync** in the panel to pull your latest autos from the planner website. A small window opens for a moment and closes itself; if the browser blocks it, allow pop-ups for frsim.com. Sync again after you edit an auto.
+4. The first time in each game: open **Setup & calibration**, drive to open space, and click **Calibrate**.
+5. Pick your routine and click **Arm for Auto** before the match starts. The routine runs when Auto begins and the panel re-arms itself for the next match. In Singleplayer you can press **R** to restart and run it again.
 
-To update a routine without re-dragging the bookmark, click **Copy routine** in the app. Then in the game panel, choose **Load routine**, paste, and click **Load**.
+No internet, or want a frozen copy? Send to FRS also has an **offline bookmark** with the code and your autos built in (it doesn't update itself). **Load routine** (paste JSON) and **Copy console script** still work too.
 
 Taking over: press any key (Esc works) or touch a real controller, and the runtime lets go instantly.
 
